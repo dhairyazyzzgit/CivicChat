@@ -183,36 +183,36 @@ export async function getLocation(file, exifGps) {
   };
 }
 
-export async function analyzePhoto(imageUrl) {
-  await wait(1200);
+export async function analyzePhoto(imageUrl, userText) {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
 
-  const keys = Object.keys(categoryMap);
-  const chosenKey = keys[Math.floor(Math.random() * keys.length)];
-  const category = categoryMap[chosenKey];
-  const lowConfidence = Math.random() < 0.33;
-  const confidence = lowConfidence ? 0.4 : 0.9;
+  if (sessionError || !session?.access_token) {
+    const authError = new Error('You need to sign in before analyzing the photo.');
+    authError.code = 'unauthorized';
+    throw authError;
+  }
 
-  const alternatives = keys
-    .filter((key) => key !== chosenKey)
-    .slice(0, 2)
-    .map((key) => ({
-      category: key,
-      label: categoryMap[key].label,
-      severity: categoryMap[key].severity,
-      description: categoryMap[key].description,
-    }));
-
-  return {
-    ai: {
-      category: chosenKey,
-      label: category.label,
-      severity: category.severity,
-      description: category.description,
-      confidence,
-      alternatives,
+  const response = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
     },
-    imageUrl,
-  };
+    body: JSON.stringify({ imageUrl, userText }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(payload?.error || 'We could not analyze the photo right now.');
+    error.code = payload?.error || 'ai_unavailable';
+    throw error;
+  }
+
+  return payload;
 }
 
 export async function findDuplicates(draft) {

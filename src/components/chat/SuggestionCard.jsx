@@ -26,7 +26,7 @@ function SuggestionCard({ category, severity, description, confidence }) {
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+      <p className="mt-3 text-sm leading-6 text-slate-600">{description || 'Issue detected in the photo.'}</p>
 
       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
         <span>Confidence</span>

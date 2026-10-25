@@ -32,6 +32,7 @@ const INITIAL_DRAFT = {
   exifGps: null,
   ai: null,
   category: null,
+  analysisText: '',
   userCorrected: false,
   note: '',
   mergeGroupId: null,
@@ -132,6 +133,34 @@ function formatCategoryLabel(value) {
   return STATUS_LABELS[value] || 'Other';
 }
 
+function normalizeAiResult(result) {
+  const next = result || {};
+  return {
+    is_civic_issue: Boolean(next.is_civic_issue),
+    category: next.category || 'other',
+    severity: next.severity || 'medium',
+    description: String(next.description || '').trim().slice(0, 200),
+    confidence: Number(next.confidence ?? 0.5),
+    alternatives: Array.isArray(next.alternatives) ? next.alternatives.slice(0, 2) : [],
+  };
+}
+
+function selectCategoryChips(aiResult) {
+  const normalized = normalizeAiResult(aiResult);
+  const choices = [normalized.category, ...(normalized.alternatives || []).slice(0, 2)].slice(0, 3);
+  return choices.map((value) => formatCategoryLabel(value));
+}
+
+function resetDraftForNextPhoto(file = null) {
+  return {
+    ...INITIAL_DRAFT,
+    imageFile: file,
+    imageUrl: '',
+    analysisText: '',
+    clientRequestId: crypto.randomUUID(),
+  };
+}
+
 export function useChatFlow() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [input, setInput] = useState('');
@@ -150,6 +179,21 @@ export function useChatFlow() {
         text,
       },
     });
+  };
+
+  const runAnalyze = (userText) => {
+    if (!state.draft.imageUrl) {
+      return;
+    }
+
+    dispatch({
+      type: 'UPDATE_DRAFT',
+      patch: {
+        analysisText: userText || '',
+      },
+    });
+
+    dispatch({ type: 'SET_STATE', status: 'ANALYZING', typing: true, lastAction: 'ANALYZE' });
   };
 
   useEffect(() => {
@@ -301,47 +345,86 @@ export function useChatFlow() {
       return;
     }
 
-    analyzePhoto(state.draft.imageUrl)
+    analyzePhoto(state.draft.imageUrl, state.draft.analysisText || undefined)
       .then((result) => {
+        const normalized = normalizeAiResult(result);
         dispatch({
           type: 'UPDATE_DRAFT',
           patch: {
-            ai: result.ai,
-            category: result.ai.category,
+            ai: normalized,
+            category: normalized.category,
+            userCorrected: false,
           },
         });
 
-        const categoryLabel = formatCategoryLabel(result.ai.category);
-        const suggestionText = `This looks like a **${categoryLabel}** (${result.ai.severity} severity). ${result.ai.description} Is that right?`;
+        if (!normalized.is_civic_issue) {
+          addBotMessage({
+            id: `not-civic-${Date.now()}`,
+            role: 'bot',
+            type: 'text',
+            text: "This doesn't look like a public civic issue. Want to try another photo?",
+          });
+          dispatch({ type: 'SET_STATE', status: 'AWAITING_PHOTO', typing: false, lastAction: 'UPLOAD' });
+          dispatch({ type: 'SET_CHIPS', chips: ['Upload another photo'] });
+          return;
+        }
+
+        const categoryLabel = formatCategoryLabel(normalized.category);
+        const shortQuestion = `This looks like ${categoryLabel.toLowerCase()}. Is this right?`;
 
         addBotMessage({
           id: `suggestion-card-${Date.now()}`,
           role: 'bot',
           type: 'suggestion',
           category: categoryLabel,
-          severity: result.ai.severity,
-          description: result.ai.description,
-          confidence: result.ai.confidence,
+          severity: normalized.severity,
+          description: normalized.description,
+          confidence: normalized.confidence,
         });
+
+        if (normalized.confidence < 0.6) {
+          addBotMessage({
+            id: `low-confidence-${Date.now()}`,
+            role: 'bot',
+            type: 'text',
+            text: "I'm not fully sure. Is it one of these?",
+          });
+          const chips = [
+            formatCategoryLabel(normalized.category),
+            ...(normalized.alternatives || []).map((alternative) => formatCategoryLabel(alternative)),
+            'Something else',
+          ];
+          dispatch({ type: 'SET_CHIPS', chips });
+          dispatch({ type: 'SET_STATE', status: 'LOW_CONFIDENCE', typing: false, lastAction: 'ANALYZE' });
+          return;
+        }
+
         addBotMessage({
           id: `suggestion-text-${Date.now()}`,
           role: 'bot',
           type: 'text',
-          text: suggestionText,
+          text: shortQuestion,
         });
         dispatch({
           type: 'SET_CHIPS',
           chips: ["Yes, that's right", "No, it's something else", 'Let me describe it'],
         });
-        dispatch({ type: 'SET_STATE', status: 'CONFIRM_CATEGORY', typing: false });
+        dispatch({ type: 'SET_STATE', status: 'CONFIRM_CATEGORY', typing: false, lastAction: 'ANALYZE' });
       })
       .catch((error) => {
-        dispatch({
-          type: 'SET_ERROR',
-          error: error?.message || 'We could not analyze the photo. Please try again.',
+        addBotMessage({
+          id: `fallback-ai-${Date.now()}`,
+          role: 'bot',
+          type: 'text',
+          text: "I couldn't analyse the photo right now, so please pick the category yourself.",
         });
+        dispatch({
+          type: 'SET_CHIPS',
+          chips: CATEGORY_OPTIONS.map((option) => option.label),
+        });
+        dispatch({ type: 'SET_STATE', status: 'PICK_CATEGORY', typing: false, lastAction: 'ANALYZE' });
       });
-  }, [state.status, state.draft.imageUrl]);
+  }, [state.status, state.draft.imageUrl, state.draft.analysisText]);
 
   useEffect(() => {
     if (state.status !== 'CHECKING_DUPLICATES') {
@@ -427,11 +510,7 @@ export function useChatFlow() {
 
     dispatch({
       type: 'UPDATE_DRAFT',
-      patch: {
-        imageFile: file,
-        imageUrl: '',
-        clientRequestId: crypto.randomUUID(),
-      },
+      patch: resetDraftForNextPhoto(file),
     });
     dispatch({ type: 'CLEAR_ERROR' });
     dispatch({ type: 'SET_STATE', status: 'UPLOADING', typing: true, lastAction: 'UPLOAD' });
@@ -441,6 +520,23 @@ export function useChatFlow() {
   const handleChipSelect = (selection) => {
     const selectionText = selection.trim();
     addUserMessage(selectionText);
+    setInput('');
+
+    if (state.status === 'AWAITING_PHOTO') {
+      dispatch({ type: 'SET_CHIPS', chips: [] });
+      dispatch({
+        type: 'UPDATE_DRAFT',
+        patch: resetDraftForNextPhoto(),
+      });
+      dispatch({ type: 'SET_STATE', status: 'GREETING', typing: false, lastAction: 'UPLOAD' });
+      addBotMessage({
+        id: `photo-reset-${Date.now()}`,
+        role: 'bot',
+        type: 'text',
+        text: 'Absolutely — please upload a new photo and I’ll re-check it.',
+      });
+      return;
+    }
 
     if (state.status === 'CONFIRM_LOCATION') {
       if (selectionText.toLowerCase().includes('yes')) {
@@ -448,7 +544,7 @@ export function useChatFlow() {
           return;
         }
         dispatch({ type: 'SET_CHIPS', chips: [] });
-        dispatch({ type: 'SET_STATE', status: 'ANALYZING', typing: true, lastAction: 'ANALYZE' });
+        runAnalyze();
         return;
       }
 
@@ -456,6 +552,46 @@ export function useChatFlow() {
         dispatch({ type: 'SET_CHIPS', chips: [] });
         return;
       }
+    }
+
+    if (state.status === 'LOW_CONFIDENCE') {
+      const normalizedChoice = selectionText.toLowerCase();
+      if (normalizedChoice.includes('something else')) {
+        dispatch({ type: 'SET_CHIPS', chips: [] });
+        addBotMessage({
+          id: `bot-category-${Date.now()}`,
+          role: 'bot',
+          type: 'text',
+          text: 'No problem. What is it?',
+        });
+        dispatch({
+          type: 'SET_CHIPS',
+          chips: CATEGORY_OPTIONS.map((option) => option.label),
+        });
+        dispatch({ type: 'SET_STATE', status: 'PICK_CATEGORY', typing: false });
+        return;
+      }
+
+      const selected = CATEGORY_OPTIONS.find((option) => option.label.toLowerCase() === selectionText.toLowerCase());
+      const categoryValue = selected?.value || state.draft.ai?.category || 'other';
+      const userCorrected = categoryValue !== state.draft.ai?.category;
+      dispatch({
+        type: 'UPDATE_DRAFT',
+        patch: {
+          category: categoryValue,
+          userCorrected,
+        },
+      });
+      dispatch({ type: 'SET_CHIPS', chips: [] });
+      addBotMessage({
+        id: `note-step-${Date.now()}`,
+        role: 'bot',
+        type: 'text',
+        text: 'Anything else the team should know?',
+      });
+      dispatch({ type: 'SET_CHIPS', chips: ['No, submit', 'Add a note'] });
+      dispatch({ type: 'SET_STATE', status: 'AWAITING_NOTE', typing: false });
+      return;
     }
 
     if (state.status === 'CONFIRM_CATEGORY') {
@@ -503,11 +639,12 @@ export function useChatFlow() {
 
     if (state.status === 'PICK_CATEGORY') {
       const selected = CATEGORY_OPTIONS.find((option) => option.label.toLowerCase() === selectionText.toLowerCase());
+      const categoryValue = selected?.value || 'other';
       dispatch({
         type: 'UPDATE_DRAFT',
         patch: {
-          category: selected?.value || 'other',
-          userCorrected: true,
+          category: categoryValue,
+          userCorrected: categoryValue !== state.draft.ai?.category,
         },
       });
       dispatch({ type: 'SET_CHIPS', chips: [] });
@@ -549,25 +686,16 @@ export function useChatFlow() {
     }
 
     if (state.status === 'AWAITING_DESCRIPTION') {
+      addUserMessage(trimmed);
       dispatch({
         type: 'UPDATE_DRAFT',
         patch: {
-          ai: {
-            ...state.draft.ai,
-            description: trimmed,
-            category: state.draft.category || state.draft.ai?.category,
-          },
+          analysisText: trimmed,
+          note: trimmed,
         },
       });
-      addUserMessage(trimmed);
-      addBotMessage({
-        id: `note-step-${Date.now()}`,
-        role: 'bot',
-        type: 'text',
-        text: 'Anything else the team should know?',
-      });
-      dispatch({ type: 'SET_CHIPS', chips: ['No, submit', 'Add a note'] });
-      dispatch({ type: 'SET_STATE', status: 'AWAITING_NOTE', typing: false });
+      dispatch({ type: 'SET_CHIPS', chips: [] });
+      runAnalyze(trimmed);
       setInput('');
       return;
     }

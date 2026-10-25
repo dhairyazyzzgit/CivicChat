@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "vercel dev --listen 0.0.0.0 --yes",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^2.31.0",
     "@supabase/supabase-js": "^2.55.0",
     "browser-image-compression": "^2.0.2",
     "exifr": "^7.1.3",
