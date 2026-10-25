@@ -66,6 +66,7 @@ function reducer(state, action) {
         status: action.status,
         typing: action.typing ?? state.typing,
         lastAction: action.lastAction || state.lastAction,
+        uploadProgress: action.status === 'UPLOADING' ? state.uploadProgress : null,
       };
     case 'SET_UPLOAD_PROGRESS':
       return {
@@ -165,6 +166,9 @@ export function useChatFlow() {
             },
           });
           dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: { label: 'Photo uploaded', value: 100 } });
+          setTimeout(() => {
+            dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: null });
+          }, 700);
           dispatch({ type: 'SET_STATE', status: 'LOCATING', typing: true, lastAction: 'LOCATING' });
           addBotMessage({
             id: `bot-${Date.now()}`,
@@ -370,7 +374,14 @@ export function useChatFlow() {
     if (state.status === 'CONFIRM_CATEGORY') {
       if (selectionText.toLowerCase().includes('yes')) {
         dispatch({ type: 'SET_CHIPS', chips: [] });
-        dispatch({ type: 'SET_STATE', status: 'CHECKING_DUPLICATES', typing: true, lastAction: 'DUPLICATES' });
+        addBotMessage({
+          id: `note-step-${Date.now()}`,
+          role: 'bot',
+          type: 'text',
+          text: 'Anything else the team should know?',
+        });
+        dispatch({ type: 'SET_CHIPS', chips: ['No, submit', 'Add a note'] });
+        dispatch({ type: 'SET_STATE', status: 'AWAITING_NOTE', typing: false });
         return;
       }
 

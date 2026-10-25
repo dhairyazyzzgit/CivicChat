@@ -46,10 +46,8 @@ async function getCurrentUserId() {
   return user.id;
 }
 
-function buildStoragePath(userId, file) {
-  const extension = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
-  const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
-  return `reports/${userId}/${safeName}`;
+function buildStoragePath(userId) {
+  return `${userId}/${crypto.randomUUID()}.jpg`;
 }
 
 export async function uploadPhoto(file, onProgress) {
@@ -89,8 +87,8 @@ export async function uploadPhoto(file, onProgress) {
 
     onProgress?.('Uploading photo…', 55);
     const userId = await getCurrentUserId();
-    const filePath = buildStoragePath(userId, compressedFile);
-    const { error: uploadError } = await supabase.storage.from('issue-images').upload(filePath, compressedFile, {
+    const filePath = buildStoragePath(userId);
+    const { error: uploadError } = await supabase.storage.from('report-images').upload(filePath, compressedFile, {
       cacheControl: '3600',
       upsert: false,
       contentType: compressedFile.type || 'image/jpeg',
@@ -100,7 +98,7 @@ export async function uploadPhoto(file, onProgress) {
       throw uploadError;
     }
 
-    const { data: publicUrlData } = supabase.storage.from('issue-images').getPublicUrl(filePath);
+    const { data: publicUrlData } = supabase.storage.from('report-images').getPublicUrl(filePath);
     onProgress?.('Finishing upload…', 100);
 
     return {
