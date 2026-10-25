@@ -49,6 +49,7 @@ const initialState = {
   lastAction: null,
   report: null,
   typing: false,
+  uploadProgress: null,
 };
 
 function reducer(state, action) {
@@ -65,6 +66,11 @@ function reducer(state, action) {
         status: action.status,
         typing: action.typing ?? state.typing,
         lastAction: action.lastAction || state.lastAction,
+      };
+    case 'SET_UPLOAD_PROGRESS':
+      return {
+        ...state,
+        uploadProgress: action.payload,
       };
     case 'UPDATE_DRAFT':
       return {
@@ -86,12 +92,14 @@ function reducer(state, action) {
         error: action.error,
         typing: false,
         chips: [],
+        uploadProgress: null,
       };
     case 'CLEAR_ERROR':
       return {
         ...state,
         error: null,
         status: state.status === 'ERROR' ? 'GREETING' : state.status,
+        uploadProgress: null,
       };
     case 'SET_REPORT':
       return {
@@ -106,6 +114,7 @@ function reducer(state, action) {
           clientRequestId: crypto.randomUUID(),
         },
         messages: [{ id: 'welcome-message', role: 'bot', type: 'text', text: BOT_GREETING }],
+        uploadProgress: null,
       };
     default:
       return state;
@@ -143,8 +152,11 @@ export function useChatFlow() {
   useEffect(() => {
     if (state.status === 'UPLOADING' && state.draft.imageFile) {
       dispatch({ type: 'SET_STATE', status: 'UPLOADING', typing: true, lastAction: 'UPLOAD' });
+      dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: { label: 'Preparing photo…', value: 10 } });
 
-      uploadPhoto(state.draft.imageFile)
+      uploadPhoto(state.draft.imageFile, (label, value) => {
+        dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: { label, value } });
+      })
         .then((result) => {
           dispatch({
             type: 'UPDATE_DRAFT',
@@ -152,6 +164,7 @@ export function useChatFlow() {
               imageUrl: result.url,
             },
           });
+          dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: { label: 'Photo uploaded', value: 100 } });
           dispatch({ type: 'SET_STATE', status: 'LOCATING', typing: true, lastAction: 'LOCATING' });
           addBotMessage({
             id: `bot-${Date.now()}`,
@@ -518,6 +531,7 @@ export function useChatFlow() {
     chips: state.chips,
     draft: state.draft,
     error: state.error,
+    uploadProgress: state.uploadProgress,
     typing: state.typing || isBotBusy(state.status),
     canSend,
     handlePhotoSelect,

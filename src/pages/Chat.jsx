@@ -40,6 +40,7 @@ function ChatPage() {
     handleUserText,
     retry,
     isBusy,
+    uploadProgress,
   } = useChatFlow();
   const scrollRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -162,6 +163,23 @@ function ChatPage() {
                   <MapPin size={14} />
                 </div>
                 <TypingIndicator />
+              </div>
+            )}
+
+            {uploadProgress && (
+              <div className="flex justify-start pl-10">
+                <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium text-slate-600">
+                    <span>{uploadProgress.label}</span>
+                    <span>{uploadProgress.value}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{ width: `${uploadProgress.value}%` }}
+                    />
+                  </div>
+                </div>
               </div>
             )}
 

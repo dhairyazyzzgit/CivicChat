@@ -1,3 +1,8 @@
+import imageCompression from 'browser-image-compression';
+import exifr from 'exifr';
+
+import { supabase } from './supabase';
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const categoryMap = {
@@ -22,31 +27,138 @@ const departmentMap = {
   other: 'General Grievance Cell',
 };
 
-export async function uploadPhoto(file) {
-  await wait(900);
+const DEFAULT_LOCATION = {
+  lat: 12.9716,
+  lng: 77.5946,
+  address: '22 MG Road, Bengaluru, Karnataka',
+};
 
+async function getCurrentUserId() {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user?.id) {
+    throw new Error('You need to sign in before uploading a photo.');
+  }
+
+  return user.id;
+}
+
+function buildStoragePath(userId, file) {
+  const extension = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
+  const safeName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+  return `reports/${userId}/${safeName}`;
+}
+
+export async function uploadPhoto(file, onProgress) {
   if (!file) {
     throw new Error('No photo was provided.');
   }
 
-  return {
-    url: URL.createObjectURL(file),
-    fileName: file.name,
-    size: file.size,
-  };
+  if (!file.type || !file.type.startsWith('image/')) {
+    throw new Error('Please choose a valid image file.');
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Images must be 5 MB or smaller.');
+  }
+
+  const originalFile = file;
+  let compressedFile = file;
+
+  try {
+    onProgress?.('Preparing photo…', 10);
+    const gps = await exifr.gps(originalFile);
+    const gpsCandidate =
+      gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)
+        ? { lat: gps.latitude, lng: gps.longitude }
+        : null;
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      onProgress?.('Compressing photo…', 25);
+      compressedFile = await imageCompression(originalFile, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1600,
+        initialQuality: 0.8,
+        useWebWorker: true,
+        alwaysKeepResolution: false,
+      });
+    }
+
+    onProgress?.('Uploading photo…', 55);
+    const userId = await getCurrentUserId();
+    const filePath = buildStoragePath(userId, compressedFile);
+    const { error: uploadError } = await supabase.storage.from('issue-images').upload(filePath, compressedFile, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: compressedFile.type || 'image/jpeg',
+    });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: publicUrlData } = supabase.storage.from('issue-images').getPublicUrl(filePath);
+    onProgress?.('Finishing upload…', 100);
+
+    return {
+      url: publicUrlData?.publicUrl || '',
+      fileName: compressedFile.name || originalFile.name,
+      size: compressedFile.size || originalFile.size,
+      gps: gpsCandidate,
+    };
+  } catch (error) {
+    if (error?.message?.includes('already exists')) {
+      throw new Error('This photo is already being uploaded. Please wait a moment and try again.');
+    }
+
+    throw new Error(error?.message || 'Photo upload failed. Please try again.');
+  }
 }
 
 export async function getLocation(file) {
-  await wait(700);
+  if (!file) {
+    throw new Error('No photo was provided.');
+  }
 
-  const lat = 12.9716 + (Math.random() - 0.5) * 0.05;
-  const lng = 77.5946 + (Math.random() - 0.5) * 0.05;
+  try {
+    const gps = await exifr.gps(file);
+    const lat = Number(gps?.latitude);
+    const lng = Number(gps?.longitude);
 
-  return {
-    lat,
-    lng,
-    address: '22 MG Road, Bengaluru, Karnataka',
-  };
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return {
+        lat,
+        lng,
+        address: 'Photo GPS location',
+      };
+    }
+  } catch (_error) {
+    // Some mobile photos do not include EXIF GPS data, so we fall back to browser geolocation later.
+  }
+
+  if (navigator && navigator.geolocation) {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 6000,
+        maximumAge: 300000,
+      });
+    }).catch(() => null);
+
+    if (position?.coords) {
+      return {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        address: 'Current location',
+      };
+    }
+  }
+
+  await wait(400);
+  return DEFAULT_LOCATION;
 }
 
 export async function analyzePhoto(imageUrl) {
