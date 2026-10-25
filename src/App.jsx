@@ -1,4 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
+import Navbar from './components/common/Navbar';
+import AdminRoute from './components/common/AdminRoute';
+import ProtectedRoute from './components/common/ProtectedRoute';
 import LandingPage from './pages/Landing';
 import LoginPage from './pages/Login';
 import SignupPage from './pages/Signup';
@@ -10,16 +13,49 @@ import NotFoundPage from './pages/NotFound';
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/chat" element={<ChatPage />} />
-      <Route path="/reports" element={<MyReportsPage />} />
-      <Route path="/reports/:id" element={<ReportDetailPage />} />
-      <Route path="/admin" element={<AdminDashboardPage />} />
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <div className="min-h-screen bg-background text-slate-900">
+      <Navbar />
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <ChatPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <MyReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/:id"
+          element={
+            <ProtectedRoute>
+              <ReportDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <AdminDashboardPage />
+              </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </div>
   );
 }
 
