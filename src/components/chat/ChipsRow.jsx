@@ -10,7 +10,7 @@ function ChipsRow({ chips, onSelect }) {
           key={chip}
           type="button"
           onClick={() => onSelect(chip)}
-          className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition hover:border-primary/40 hover:bg-primary/10"
+          className="rounded-full border border-primary/15 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary transition hover:border-primary/30 hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/20"
         >
           {chip}
         </button>

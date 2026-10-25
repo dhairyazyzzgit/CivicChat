@@ -1,6 +1,7 @@
 import imageCompression from 'browser-image-compression';
 import exifr from 'exifr';
 
+import { reverseGeocode } from './geocode';
 import { supabase } from './supabase';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,10 +29,16 @@ const departmentMap = {
 };
 
 const DEFAULT_LOCATION = {
-  lat: 12.9716,
-  lng: 77.5946,
-  address: '22 MG Road, Bengaluru, Karnataka',
+  lat: 20.5937,
+  lng: 78.9629,
+  address: 'India centre',
+  ward: null,
+  mode: 'manual',
 };
+
+function hasValidCoords(lat, lng) {
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0);
+}
 
 async function getCurrentUserId() {
   const {
@@ -116,47 +123,64 @@ export async function uploadPhoto(file, onProgress) {
   }
 }
 
-export async function getLocation(file) {
-  if (!file) {
-    throw new Error('No photo was provided.');
+export async function getLocation(file, exifGps) {
+  if (exifGps && hasValidCoords(exifGps.lat, exifGps.lng)) {
+    const geocode = await reverseGeocode(exifGps.lat, exifGps.lng);
+    return {
+      lat: exifGps.lat,
+      lng: exifGps.lng,
+      address: geocode.address,
+      ward: geocode.ward,
+      mode: 'exif',
+    };
   }
 
-  try {
-    const gps = await exifr.gps(file);
-    const lat = Number(gps?.latitude);
-    const lng = Number(gps?.longitude);
+  if (file) {
+    try {
+      const gps = await exifr.gps(file);
+      const lat = Number(gps?.latitude);
+      const lng = Number(gps?.longitude);
 
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      return {
-        lat,
-        lng,
-        address: 'Photo GPS location',
-      };
+      if (hasValidCoords(lat, lng)) {
+        const geocode = await reverseGeocode(lat, lng);
+        return {
+          lat,
+          lng,
+          address: geocode.address,
+          ward: geocode.ward,
+          mode: 'exif',
+        };
+      }
+    } catch (_error) {
+      // Fall through to geolocation prompts.
     }
-  } catch (_error) {
-    // Some mobile photos do not include EXIF GPS data, so we fall back to browser geolocation later.
   }
 
   if (navigator && navigator.geolocation) {
-    const position = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 6000,
-        maximumAge: 300000,
-      });
-    }).catch(() => null);
+    const location = await new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+      );
+    });
 
-    if (position?.coords) {
+    if (location && hasValidCoords(location.lat, location.lng)) {
+      const geocode = await reverseGeocode(location.lat, location.lng);
       return {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        address: 'Current location',
+        lat: location.lat,
+        lng: location.lng,
+        address: geocode.address,
+        ward: geocode.ward,
+        mode: 'gps',
       };
     }
   }
 
-  await wait(400);
-  return DEFAULT_LOCATION;
+  return {
+    ...DEFAULT_LOCATION,
+    mode: 'manual',
+  };
 }
 
 export async function analyzePhoto(imageUrl) {

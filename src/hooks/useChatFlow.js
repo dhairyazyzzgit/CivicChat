@@ -29,12 +29,14 @@ const INITIAL_DRAFT = {
   lat: null,
   lng: null,
   address: '',
+  exifGps: null,
   ai: null,
   category: null,
   userCorrected: false,
   note: '',
   mergeGroupId: null,
   clientRequestId: null,
+  isLocationConfirmed: false,
 };
 
 const initialState = {
@@ -163,6 +165,7 @@ export function useChatFlow() {
             type: 'UPDATE_DRAFT',
             patch: {
               imageUrl: result.url,
+              exifGps: result.gps,
             },
           });
           dispatch({ type: 'SET_UPLOAD_PROGRESS', payload: { label: 'Photo uploaded', value: 100 } });
@@ -199,23 +202,83 @@ export function useChatFlow() {
       return;
     }
 
-    getLocation(state.draft.imageFile)
+    getLocation(state.draft.imageFile, state.draft.exifGps)
       .then((location) => {
+        const nextDraft = {
+          lat: location.lat,
+          lng: location.lng,
+          address: location.address,
+        };
+
+        if (location.mode === 'manual') {
+          addBotMessage({
+            id: `location-prompt-${Date.now()}`,
+            role: 'bot',
+            type: 'text',
+            text: 'I need your location so the right team can find this spot. Please allow location access.',
+          });
+          addBotMessage({
+            id: `map-${Date.now()}`,
+            role: 'bot',
+            type: 'map',
+            latitude: location.lat,
+            longitude: location.lng,
+            address: location.address,
+            manualMode: true,
+            onConfirm: ({ lat, lng, address: selectedAddress }) => {
+              dispatch({
+                type: 'UPDATE_DRAFT',
+                patch: {
+                  lat,
+                  lng,
+                  address: selectedAddress,
+                  isLocationConfirmed: true,
+                },
+              });
+              dispatch({ type: 'SET_CHIPS', chips: [] });
+              dispatch({ type: 'SET_STATE', status: 'CONFIRM_LOCATION', typing: false, lastAction: 'CONFIRM_LOCATION' });
+            },
+          });
+          dispatch({
+            type: 'UPDATE_DRAFT',
+            patch: {
+              ...nextDraft,
+              isLocationConfirmed: false,
+            },
+          });
+          dispatch({ type: 'SET_STATE', status: 'CONFIRM_LOCATION', typing: false, lastAction: 'CONFIRM_LOCATION' });
+          return;
+        }
+
         dispatch({
           type: 'UPDATE_DRAFT',
           patch: {
-            lat: location.lat,
-            lng: location.lng,
-            address: location.address,
+            ...nextDraft,
+            isLocationConfirmed: false,
           },
         });
         addBotMessage({
           id: `map-${Date.now()}`,
           role: 'bot',
           type: 'map',
+          latitude: location.lat,
+          longitude: location.lng,
           address: location.address,
+          onConfirm: ({ lat, lng, address: selectedAddress }) => {
+            dispatch({
+              type: 'UPDATE_DRAFT',
+              patch: {
+                lat,
+                lng,
+                address: selectedAddress,
+                isLocationConfirmed: true,
+              },
+            });
+            dispatch({ type: 'SET_CHIPS', chips: [] });
+            dispatch({ type: 'SET_STATE', status: 'CONFIRM_LOCATION', typing: false, lastAction: 'CONFIRM_LOCATION' });
+          },
         });
-        dispatch({ type: 'SET_STATE', status: 'ANALYZING', typing: true, lastAction: 'ANALYZE' });
+        dispatch({ type: 'SET_STATE', status: 'CONFIRM_LOCATION', typing: false, lastAction: 'CONFIRM_LOCATION' });
       })
       .catch((error) => {
         dispatch({
@@ -223,7 +286,15 @@ export function useChatFlow() {
           error: error?.message || 'Location lookup failed. Please try again.',
         });
       });
-  }, [state.status, state.draft.imageUrl, state.draft.imageFile]);
+  }, [state.status, state.draft.imageUrl, state.draft.imageFile, state.draft.exifGps]);
+
+  useEffect(() => {
+    if (state.status !== 'CONFIRM_LOCATION' || !state.draft.imageUrl || !state.draft.isLocationConfirmed) {
+      return;
+    }
+
+    dispatch({ type: 'SET_STATE', status: 'ANALYZING', typing: true, lastAction: 'ANALYZE' });
+  }, [state.status, state.draft.imageUrl, state.draft.isLocationConfirmed]);
 
   useEffect(() => {
     if (state.status !== 'ANALYZING' || !state.draft.imageUrl) {
@@ -370,6 +441,22 @@ export function useChatFlow() {
   const handleChipSelect = (selection) => {
     const selectionText = selection.trim();
     addUserMessage(selectionText);
+
+    if (state.status === 'CONFIRM_LOCATION') {
+      if (selectionText.toLowerCase().includes('yes')) {
+        if (!state.draft.isLocationConfirmed) {
+          return;
+        }
+        dispatch({ type: 'SET_CHIPS', chips: [] });
+        dispatch({ type: 'SET_STATE', status: 'ANALYZING', typing: true, lastAction: 'ANALYZE' });
+        return;
+      }
+
+      if (selectionText.toLowerCase().includes('adjust')) {
+        dispatch({ type: 'SET_CHIPS', chips: [] });
+        return;
+      }
+    }
 
     if (state.status === 'CONFIRM_CATEGORY') {
       if (selectionText.toLowerCase().includes('yes')) {

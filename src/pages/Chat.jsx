@@ -125,7 +125,16 @@ function ChatPage() {
                       {message.type === 'image' && (
                         <ImageMessage src={message.imageUrl} alt={message.alt} progress={message.progress || 100} caption="Uploaded photo" />
                       )}
-                      {message.type === 'map' && <MapCard address={message.address} />}
+                      {message.type === 'map' && (
+                        <MapCard
+                          address={message.address}
+                          latitude={message.latitude}
+                          longitude={message.longitude}
+                          manualMode={message.manualMode}
+                          onConfirm={message.onConfirm}
+                          onAdjust={message.onAdjust}
+                        />
+                      )}
                       {message.type === 'suggestion' && (
                         <SuggestionCard
                           category={message.category}
