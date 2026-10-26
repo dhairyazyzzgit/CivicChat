@@ -1,17 +1,52 @@
-function ImageMessage({ src, alt, progress = 100, caption }) {
+import { Check, Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+function ImageMessage({ src, alt = 'Uploaded issue photo', uploadStatus = 'uploaded', onRetry }) {
+  const [showUploadedBadge, setShowUploadedBadge] = useState(true);
+
+  useEffect(() => {
+    if (uploadStatus === 'uploaded') {
+      const timer = setTimeout(() => {
+        setShowUploadedBadge(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+    setShowUploadedBadge(true);
+  }, [uploadStatus]);
+
   return (
-    <div className="max-w-[80%] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="relative">
-        <img src={src} alt={alt} className="h-52 w-full object-cover" />
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/70 to-transparent p-3 text-xs text-white">
-          {caption || 'Uploaded photo'}
+    <div className="relative w-full max-w-[280px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
+      <img src={src} alt={alt} className="h-48 w-full object-cover" />
+
+      {uploadStatus === 'uploading' && (
+        <div className="absolute inset-x-2.5 bottom-2.5 flex items-center gap-1.5 rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-white shadow backdrop-blur-xs">
+          <Loader2 size={12} className="animate-spin text-teal-300" />
+          <span>Uploading...</span>
         </div>
-        {progress < 100 && (
-          <div className="absolute inset-x-3 top-3 rounded-full bg-slate-900/55 p-1">
-            <div className="h-1.5 rounded-full bg-white" style={{ width: `${progress}%` }} />
-          </div>
-        )}
-      </div>
+      )}
+
+      {uploadStatus === 'uploaded' && showUploadedBadge && (
+        <div className="absolute inset-x-2.5 bottom-2.5 flex items-center gap-1.5 rounded-full bg-emerald-700/85 px-2.5 py-1 text-[11px] font-medium text-white shadow backdrop-blur-xs transition-opacity duration-500">
+          <Check size={12} className="text-white" />
+          <span>Uploaded</span>
+        </div>
+      )}
+
+      {uploadStatus === 'failed' && (
+        <div className="absolute inset-x-2.5 bottom-2.5 flex items-center justify-between gap-1.5 rounded-full bg-rose-700/90 px-2.5 py-1 text-[11px] font-medium text-white shadow backdrop-blur-xs">
+          <span>Upload failed</span>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-white/30"
+            >
+              <RefreshCw size={10} />
+              Retry
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,50 +1,43 @@
 import { createClient } from '@supabase/supabase-js';
 
-const requestBuckets = new Map();
+const rateLimitBuckets = new Map();
 
-export async function requireUser(req, res) {
-  const authHeader = req.headers?.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
-
-  if (!token) {
-    res.status(401).json({ error: 'unauthorized' });
-    return null;
-  }
-
+function getSupabase() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-
   if (!supabaseUrl || !supabaseAnonKey) {
-    res.status(500).json({ error: 'server_error' });
-    return null;
+    throw { status: 500, code: 'server_error', message: 'Missing Supabase environment variables.' };
   }
-
-  try {
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    const { data, error } = await supabase.auth.getUser(token);
-
-    if (error || !data?.user) {
-      res.status(401).json({ error: 'unauthorized' });
-      return null;
-    }
-
-    return data.user;
-  } catch (_error) {
-    res.status(401).json({ error: 'unauthorized' });
-    return null;
-  }
+  return createClient(supabaseUrl, supabaseAnonKey);
 }
 
-export function allowRequest(userId, limit = 10, windowMs = 60000) {
+export async function requireUser(req) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+
+  if (!token) {
+    throw { status: 401, code: 'unauthorized', message: 'Missing authentication token.' };
+  }
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data?.user) {
+    throw { status: 401, code: 'unauthorized', message: 'Invalid or expired authentication token.' };
+  }
+
+  return data.user;
+}
+
+export function checkRateLimit(userId, limit = 6, windowMs = 60_000) {
   const now = Date.now();
-  const existing = requestBuckets.get(userId) || [];
+  const existing = rateLimitBuckets.get(userId) || [];
   const recent = existing.filter((timestamp) => now - timestamp < windowMs);
 
   if (recent.length >= limit) {
-    return false;
+    throw { status: 429, code: 'ai_busy', message: 'Rate limit exceeded. Please wait a moment.' };
   }
 
   recent.push(now);
-  requestBuckets.set(userId, recent);
-  return true;
+  rateLimitBuckets.set(userId, recent);
 }

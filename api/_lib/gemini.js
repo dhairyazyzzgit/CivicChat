@@ -1,168 +1,314 @@
-import { GoogleGenAI } from '@google/genai';
+import crypto from 'node:crypto';
 
-const AI_TIMEOUT_MS = 20000;
-const RETRY_DELAY_MS = 1500;
+const CACHE = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function shortUserId(userId) {
+  if (!userId) return 'anon';
+  return String(userId).slice(0, 6);
 }
 
-function logGeminiError(stage, error, context = {}) {
-  console.error(`[Gemini:${stage}]`, {
-    name: error?.name,
-    message: error?.message,
-    code: error?.code,
-    status: error?.status,
-    ...context,
-  });
+function hashKey(data) {
+  return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 }
 
-function getModelName() {
-  return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-}
+export async function callGemini({
+  userId,
+  prompt,
+  imagePart,
+  imageParts,
+  responseSchema,
+  temperature = 0.1,
+  maxOutputTokens = 300,
+  responseMimeType = 'application/json',
+}) {
+  const apiKey = process.env.GEMINI_API_KEY || '';
 
-export async function callGemini({ parts, schema }) {
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    const error = new Error('Missing Gemini API key');
-    error.code = 'ai_unavailable';
-    throw error;
+  // AI_MOCK=1 support
+  if (String(process.env.AI_MOCK || '').trim() === '1') {
+    const isCompare = responseSchema?.properties?.same !== undefined;
+    const mockResult = isCompare
+      ? { same: false, confidence: 0.85, reason: 'Different issues detected (mocked).' }
+      : {
+          is_civic_issue: true,
+          category: 'pothole',
+          severity: 'high',
+          confidence: 0.95,
+          description: 'Pothole on the road surface (mocked).',
+        };
+    return mockResult;
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-  const model = getModelName();
-  const body = {
-    model,
-    contents: [{ role: 'user', parts }],
-    config: {
-      temperature: 0.2,
-      responseMimeType: 'application/json',
-      responseSchema: schema,
-    },
-  };
+  // Normalize image parts
+  let resolvedParts = [];
+  if (Array.isArray(imageParts)) {
+    resolvedParts = imageParts.filter(Boolean);
+  } else if (imagePart) {
+    resolvedParts = Array.isArray(imagePart) ? imagePart : [imagePart];
+  }
 
-  let attempt = 0;
+  const cachePayload = { prompt, resolvedParts, responseSchema };
+  const cacheKey = hashKey(cachePayload);
+  const cached = CACHE.get(cacheKey);
 
-  while (attempt < 2) {
-    try {
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          const timeoutError = new Error('AI request timed out');
-          timeoutError.name = 'AbortError';
-          timeoutError.code = 'ai_timeout';
-          reject(timeoutError);
-        }, AI_TIMEOUT_MS);
-      });
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS && cached.value && (cached.value.category || typeof cached.value.same === 'boolean')) {
+    console.log(
+      JSON.stringify({
+        userId: shortUserId(userId),
+        cacheHit: true,
+        model: cached.model,
+        status: 'ok',
+        ms: 0,
+        totalTokens: cached.totalTokens,
+      }),
+    );
+    return cached.value;
+  }
 
-      const response = await Promise.race([
-        ai.models.generateContent(body),
-        timeoutPromise,
-      ]);
+  const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL;
+  const modelChain = [primaryModel];
+  if (fallbackModel && fallbackModel !== primaryModel) {
+    modelChain.push(fallbackModel);
+  }
 
-      const text = response?.text || response?.candidates?.[0]?.content?.parts?.[0]?.text;
+  let primaryError = null;
 
-      if (!text) {
-        const error = new Error('Gemini returned no usable output');
-        error.code = 'ai_bad_output';
-        throw error;
-      }
+  for (let mIdx = 0; mIdx < modelChain.length; mIdx++) {
+    const model = modelChain[mIdx];
+    const isFallback = mIdx > 0;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    let attempt503Done = false;
+    let attempt400Done = false;
+    let withThinking = true;
+
+    while (true) {
+      const startTime = Date.now();
+      const requestBody = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }, ...resolvedParts],
+          },
+        ],
+        generationConfig: {
+          temperature,
+          maxOutputTokens,
+          responseMimeType,
+          responseSchema,
+          ...(withThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20_000);
 
       try {
-        return JSON.parse(text);
-      } catch (_parseError) {
-        const error = new Error('Gemini returned malformed JSON');
-        error.code = 'ai_bad_output';
-        throw error;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        const ms = Date.now() - startTime;
+        const text = await response.text();
+        let json = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {
+          json = null;
+        }
+
+        if (!response.ok) {
+          const status = response.status;
+          const errorMsg = json?.error?.message || text || 'Gemini error';
+
+          // On 503 retry the SAME model once after 1.5 s
+          if (status === 503 && !attempt503Done) {
+            attempt503Done = true;
+            await sleep(1500);
+            continue;
+          }
+
+          // On 400 mentioning thinkingConfig retry once without thinkingConfig
+          if (status === 400 && !attempt400Done && /thinkingConfig|thinking_budget|thinking/i.test(errorMsg)) {
+            attempt400Done = true;
+            withThinking = false;
+            continue;
+          }
+
+          // On 429 never retry the same model, go to fallback if any, else throw {code:'ai_busy', status:429}
+          if (status === 429) {
+            const errorObj = { code: 'ai_busy', status: 429, message: 'AI service busy. Please try again later.' };
+            if (!isFallback) {
+              primaryError = errorObj;
+            }
+            if (mIdx + 1 < modelChain.length) {
+              // Try fallback model
+              break;
+            }
+            throw errorObj;
+          }
+
+          // On 404 for the fallback model ignore it and report the primary error
+          if (status === 404 && isFallback && primaryError) {
+            throw primaryError;
+          }
+
+          const modelError = {
+            code: 'ai_unavailable',
+            status: status >= 500 ? 502 : status,
+            message: errorMsg,
+          };
+
+          if (!isFallback) {
+            primaryError = modelError;
+          }
+
+          // Try next model in chain if available
+          if (mIdx + 1 < modelChain.length) {
+            break;
+          }
+          throw isFallback && primaryError ? primaryError : modelError;
+        }
+
+        const candidateText = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!candidateText) {
+          throw { code: 'ai_unavailable', status: 502, message: 'Empty response from AI.' };
+        }
+
+        let parsedResult;
+        try {
+          parsedResult = JSON.parse(candidateText);
+        } catch {
+          throw { code: 'ai_unavailable', status: 502, message: 'Invalid JSON returned by AI.' };
+        }
+
+        const totalTokens = Number(json?.usageMetadata?.totalTokenCount || 0);
+
+        CACHE.set(cacheKey, {
+          ts: Date.now(),
+          model,
+          totalTokens,
+          value: parsedResult,
+        });
+
+        console.log(
+          JSON.stringify({
+            userId: shortUserId(userId),
+            cacheHit: false,
+            model,
+            status: 'ok',
+            ms,
+            totalTokens,
+          }),
+        );
+
+        return parsedResult;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const ms = Date.now() - startTime;
+        const isAbort = err?.name === 'AbortError';
+        const errObj = isAbort
+          ? { code: 'ai_unavailable', status: 502, message: 'AI request timed out.' }
+          : err?.code
+            ? err
+            : { code: 'ai_unavailable', status: 502, message: err?.message || 'AI request failed.' };
+
+        console.log(
+          JSON.stringify({
+            userId: shortUserId(userId),
+            cacheHit: false,
+            model,
+            status: 'error',
+            ms,
+            totalTokens: 0,
+          }),
+        );
+
+        if (!isFallback) {
+          primaryError = errObj;
+        }
+
+        if (errObj.code === 'ai_busy' && mIdx + 1 >= modelChain.length) {
+          throw errObj;
+        }
+
+        // Try next model if available
+        if (mIdx + 1 < modelChain.length) {
+          break;
+        }
+        throw isFallback && primaryError ? primaryError : errObj;
       }
-    } catch (error) {
-      const retryableStatus = error?.status === 429 || error?.status === 503;
-      const retryableMessage = /429|503|rate limit|temporar|network|timeout/i.test(String(error?.message || ''));
-
-      logGeminiError('generateContent', error, { attempt, model, retryableStatus, retryableMessage });
-
-      if (error?.name === 'AbortError' || error?.code === 'ai_timeout') {
-        const timeoutError = new Error('AI request timed out');
-        timeoutError.code = 'ai_timeout';
-        throw timeoutError;
-      }
-
-      if (attempt === 0 && (retryableStatus || retryableMessage)) {
-        attempt += 1;
-        await sleep(RETRY_DELAY_MS);
-        continue;
-      }
-
-      if (error?.code) {
-        throw error;
-      }
-
-      const wrapped = new Error('AI request failed');
-      wrapped.code = 'ai_unavailable';
-      throw wrapped;
     }
   }
 
-  const exhaustiveError = new Error('AI request failed after retry');
-  exhaustiveError.code = 'ai_unavailable';
-  throw exhaustiveError;
+  if (primaryError) {
+    throw primaryError;
+  }
+  throw { code: 'ai_unavailable', status: 502, message: 'AI service unavailable.' };
 }
 
-export async function fetchImageAsPart(url) {
-  if (!url || typeof url !== 'string') {
-    throw new Error('Image URL missing');
-  }
-
-  let parsedUrl;
+export async function fetchPublicImagePart(url, maxBytes) {
+  let parsed;
   try {
-    parsedUrl = new URL(url);
-  } catch (_error) {
-    throw new Error('Invalid image URL');
+    parsed = new URL(url);
+  } catch {
+    throw { status: 400, code: 'invalid_request', message: 'Invalid image URL.' };
   }
 
-  const allowedBase = process.env.SUPABASE_URL;
-  if (!allowedBase) {
-    throw new Error('Supabase URL missing');
+  if (parsed.protocol !== 'https:') {
+    throw { status: 400, code: 'invalid_request', message: 'HTTPS image URL is required.' };
   }
 
-  const allowedOrigin = new URL(allowedBase).origin;
-
-  if (parsedUrl.origin !== allowedOrigin) {
-    throw new Error('Image URL origin not allowed');
+  const supabaseUrl = process.env.SUPABASE_URL || '';
+  if (!supabaseUrl) {
+    throw { status: 500, code: 'server_error', message: 'SUPABASE_URL is not configured.' };
   }
 
-  if (!parsedUrl.pathname.startsWith('/storage/v1/object/public/')) {
-    throw new Error('Image URL path not allowed');
+  let allowedHost;
+  try {
+    allowedHost = new URL(supabaseUrl).host;
+  } catch {
+    throw { status: 500, code: 'server_error', message: 'Invalid SUPABASE_URL.' };
+  }
+
+  if (parsed.host !== allowedHost) {
+    throw { status: 400, code: 'invalid_request', message: 'Image URL host is not permitted.' };
+  }
+
+  if (!parsed.pathname.startsWith('/storage/v1/object/public/report-images/')) {
+    throw { status: 400, code: 'invalid_request', message: 'Image URL path is not permitted.' };
   }
 
   const response = await fetch(url, { method: 'GET' });
-
   if (!response.ok) {
-    throw new Error('Image download failed');
+    throw { status: 400, code: 'invalid_request', message: 'Could not fetch image.' };
   }
 
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.startsWith('image/')) {
-    throw new Error('Image content type invalid');
-  }
-
-  const contentLengthHeader = response.headers.get('content-length');
-  const contentLength = Number(contentLengthHeader || '0');
-  if (contentLength > 6 * 1024 * 1024) {
-    throw new Error('Image too large');
+    throw { status: 400, code: 'invalid_request', message: 'Fetched content is not an image.' };
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > 6 * 1024 * 1024) {
-    throw new Error('Image too large');
+  if (arrayBuffer.byteLength > maxBytes) {
+    throw { status: 400, code: 'invalid_request', message: `Image exceeds maximum allowed size of ${maxBytes} bytes.` };
   }
 
-  const base64 = Buffer.from(arrayBuffer).toString('base64');
-
+  const base64Data = Buffer.from(arrayBuffer).toString('base64');
   return {
     inlineData: {
       mimeType: contentType,
-      data: base64,
+      data: base64Data,
     },
   };
 }

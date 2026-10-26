@@ -32,9 +32,7 @@ export function AuthProvider({ children }) {
     let isMounted = true;
 
     const initialiseSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
 
       if (!isMounted) {
         return;
@@ -54,9 +52,7 @@ export function AuthProvider({ children }) {
 
     initialiseSession();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUser = session?.user ?? null;
 
       if (!isMounted) {
@@ -65,13 +61,18 @@ export function AuthProvider({ children }) {
 
       setUser(nextUser);
 
-      if (nextUser) {
-        await fetchProfileByUserId(nextUser.id, setProfile);
-      } else {
-        setProfile(null);
-      }
+      setTimeout(() => {
+        if (!isMounted) {
+          return;
+        }
 
-      setLoading(false);
+        if (nextUser) {
+          fetchProfileByUserId(nextUser.id, setProfile);
+        } else {
+          setProfile(null);
+        }
+        setLoading(false);
+      }, 0);
     });
 
     return () => {
@@ -84,11 +85,7 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          name,
-        },
-      },
+      options: { data: { name } },
     });
 
     if (error) {
@@ -106,10 +103,7 @@ export function AuthProvider({ children }) {
   };
 
   const signIn = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       throw error;
@@ -137,19 +131,7 @@ export function AuthProvider({ children }) {
   };
 
   const role = profile?.role ?? null;
-
-  const value = useMemo(
-    () => ({
-      user,
-      profile,
-      role,
-      loading,
-      signUp,
-      signIn,
-      signOut,
-    }),
-    [user, profile, loading],
-  );
+  const value = useMemo(() => ({ user, profile, role, loading, signUp, signIn, signOut }), [user, profile, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
