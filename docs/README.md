@@ -1,6 +1,6 @@
-# CivicChat
+# Shikayaat
 
-This repository contains the initial project skeleton for the CivicChat web app.
+This repository contains the initial project skeleton for the Shikayaat web app.
 
 ## Stack
 
