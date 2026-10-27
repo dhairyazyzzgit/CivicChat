@@ -22,6 +22,9 @@
 
 **Dhairya Maru** · End-Term Software Project, 2026 · Demo data: Electronic City, Bengaluru
 
+> 🔑 **Demo logins (test data only):** [shikayaat.vercel.app](https://shikayaat.vercel.app)
+> **Admin:** `maru2dhairya2007@gmail.com` / `dhairyaa` · **Citizen:** `banana1234@gmail.com` / `dhairyaa`
+
 </div>
 
 ---
