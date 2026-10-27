@@ -1,5 +1,8 @@
-import { Routes, Route } from 'react-router-dom';
+import { Route, Routes, useLocation } from 'react-router-dom';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import Navbar from './components/common/Navbar';
+import BottomNav, { bottomNavVisible } from './components/common/BottomNav';
+import { useAuth } from './context/AuthContext';
 import AdminRoute from './components/common/AdminRoute';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import LandingPage from './pages/Landing';
@@ -12,50 +15,58 @@ import AdminDashboardPage from './pages/AdminDashboard';
 import NotFoundPage from './pages/NotFound';
 
 function App() {
+  const location = useLocation();
+  const { user, role } = useAuth();
+  const hideGlobalNavbar = location.pathname.startsWith('/admin');
+  const showBottomNav = bottomNavVisible(location.pathname, user, role);
+
   return (
-    <div className="min-h-screen bg-background text-slate-900">
-      <Navbar />
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route
-          path="/chat"
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/reports"
-          element={
-            <ProtectedRoute>
-              <MyReportsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/reports/:id"
-          element={
-            <ProtectedRoute>
-              <ReportDetailPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute>
-              <AdminRoute>
-                <AdminDashboardPage />
-              </AdminRoute>
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </div>
+    <ErrorBoundary>
+      <div className={`min-h-screen bg-background text-slate-900 ${showBottomNav ? 'pb-24 md:pb-0' : ''}`}>
+        {!hideGlobalNavbar && <Navbar />}
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route
+            path="/chat"
+            element={
+              <ProtectedRoute>
+                <ChatPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <MyReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports/:id"
+            element={
+              <ProtectedRoute>
+                <ReportDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminRoute>
+                  <AdminDashboardPage />
+                </AdminRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+        <BottomNav />
+      </div>
+    </ErrorBoundary>
   );
 }
 

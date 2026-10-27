@@ -3,9 +3,11 @@ import { useAuth } from '../context/AuthContext';
 import { CATEGORIES, CATEGORY_BY_ID, CATEGORY_OPTIONS } from '../lib/categories';
 import { findDuplicates, submitReport } from '../lib/chatServices';
 import { reverseGeocode } from '../lib/geocode';
-import { getBrowserPosition, isValidCoords } from '../lib/location';
+import { validateImageFile } from '../lib/imageFile';
+import { acquireBrowserPosition, isValidCoords } from '../lib/location';
 import { createPhotoJob } from '../lib/photoJob';
 import { supabase } from '../lib/supabase';
+import { MAX_SOURCE_IMAGE_BYTES, sourceImageTooLargeMessage } from '../lib/uploadLimits';
 
 const BOT_GREETING =
   "Hi, I'm CivicBot. See something broken in your area, like a pothole, garbage, an open drain or loose wires? Send me a photo and I'll handle the rest.";
@@ -82,13 +84,13 @@ function createFreshDraft() {
   };
 }
 
-function createInitialState() {
+function createInitialState(uid) {
   try {
     if (typeof window !== 'undefined') {
       const saved = window.sessionStorage.getItem(CHAT_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+        if (uid && parsed && parsed.uid === uid && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
           return {
             status: parsed.status || 'IDLE',
             messages: parsed.messages,
@@ -190,7 +192,7 @@ function reducer(state, action) {
 
 export function useChatFlow() {
   const { user } = useAuth();
-  const [state, dispatch] = useReducer(reducer, null, createInitialState);
+  const [state, dispatch] = useReducer(reducer, user?.id || null, createInitialState);
   const [typing, setTyping] = useState(false);
   const [input, setInput] = useState('');
 
@@ -198,12 +200,29 @@ export function useChatFlow() {
   const queueRef = useRef(Promise.resolve());
   const interactionLockRef = useRef(new Set());
   const photoMsgIdRef = useRef(null);
+  const locationRequestRef = useRef(0);
 
   // Synchronized draft ref to always read latest values in async tasks
   const draftRef = useRef(state.draft);
   useEffect(() => {
     draftRef.current = state.draft;
   }, [state.draft]);
+
+  // A different account on the same device must never inherit the previous chat
+  const lastUidRef = useRef(user?.id || null);
+  useEffect(() => {
+    const uid = user?.id || null;
+    if (lastUidRef.current !== uid) {
+      lastUidRef.current = uid;
+      jobRef.current?.abort?.();
+      jobRef.current = null;
+      queueRef.current = Promise.resolve();
+      interactionLockRef.current.clear();
+      setTyping(false);
+      setInput('');
+      dispatch({ type: 'RESET' });
+    }
+  }, [user?.id]);
 
   // Persist chat across tab/route switches
   useEffect(() => {
@@ -213,6 +232,7 @@ export function useChatFlow() {
           window.sessionStorage.setItem(
             CHAT_STORAGE_KEY,
             JSON.stringify({
+              uid: user?.id || null,
               status: state.status,
               messages: state.messages,
               interaction: state.interaction,
@@ -225,7 +245,7 @@ export function useChatFlow() {
     } catch {
       // Ignore
     }
-  }, [state.status, state.messages, state.interaction, state.draft, state.jobId]);
+  }, [user?.id, state.status, state.messages, state.interaction, state.draft, state.jobId]);
 
   // Queue helper: enqueue sequential bot messages with typing indicator (400-700 ms)
   const say = useCallback((text) => {
@@ -292,7 +312,12 @@ export function useChatFlow() {
           mergeGroupId = dupResult.mergeGroupId;
           dispatch({ type: 'SET_DRAFT', patch: { mergeGroupId } });
           currentDraft.mergeGroupId = mergeGroupId;
-          await say("This spot was already reported. I'll add your report to it so it gets more attention.");
+          if (dupResult.reportedByMe) {
+            await say("You've already reported this issue here. I'll link this to your existing ticket without raising its priority again.");
+          } else {
+            const n = Math.max(1, dupResult.reporterCount);
+            await say(`This issue was already reported by ${n} other ${n === 1 ? 'person' : 'people'}. I'll add your report to it so it gets more attention.`);
+          }
         }
       } catch {
         // If duplicate comparison fails, continue creating normal report
@@ -321,9 +346,12 @@ export function useChatFlow() {
         };
         dispatch({ type: 'APPEND_MESSAGE', message: confirmMsg });
 
-        const confirmText = report.merged
-          ? `${report.reportCount - 1} other people already reported this spot, so I added yours to the same issue. More reports means higher priority.`
-          : `Done! I've sent this to ${report.departmentName}. I'll update you when the status changes.`;
+        const others = Math.max(0, report.reporterCount - 1);
+        const confirmText = report.alreadyReportedByMe
+          ? `Your new photo is saved under ticket ${report.ticketCode}. Priority stays the same since you already reported this spot.`
+          : report.merged
+            ? `${others} other ${others === 1 ? 'person' : 'people'} already reported this spot, so I added yours to the same issue. More reports means higher priority.`
+            : `Done! I've sent this to ${report.departmentName}. I'll update you when the status changes.`;
         await say(confirmText);
       } catch (err) {
         dispatch({
@@ -441,13 +469,38 @@ export function useChatFlow() {
     [say],
   );
 
+  const openManualLocation = useCallback(async (job, message) => {
+    if (job?.dead) return;
+    if (message) await say(message);
+    dispatch({ type: 'SET_STATUS', status: 'CONFIRM_LOCATION' });
+    dispatch({
+      type: 'SET_INTERACTION',
+      interaction: {
+        id: crypto.randomUUID(),
+        kind: 'location',
+        latitude: null,
+        longitude: null,
+        address: '',
+        ward: null,
+        source: 'manual',
+        accuracy: 50,
+        manualMode: true,
+      },
+    });
+    dispatch({ type: 'SET_BUSY', busy: false });
+  }, [say]);
+
   // Location resolve flow: Photo EXIF -> Browser Geolocation -> Manual Pin
   const resolveLocation = useCallback(
     async (job) => {
+      const requestId = ++locationRequestRef.current;
       dispatch({ type: 'SET_STATUS', status: 'LOCATING' });
       dispatch({ type: 'SET_BUSY', busy: true });
+      dispatch({
+        type: 'SET_INTERACTION',
+        interaction: { id: crypto.randomUUID(), kind: 'locating', phase: 'initializing' },
+      });
 
-      // 1. Check Photo EXIF GPS
       let exifGps = null;
       try {
         exifGps = await job.exif;
@@ -455,11 +508,11 @@ export function useChatFlow() {
         exifGps = null;
       }
 
-      if (job.dead) return;
+      if (job.dead || requestId !== locationRequestRef.current) return;
 
       if (exifGps && isValidCoords(exifGps.lat, exifGps.lng)) {
         const geo = await reverseGeocode(exifGps.lat, exifGps.lng);
-        if (job.dead) return;
+        if (job.dead || requestId !== locationRequestRef.current) return;
 
         dispatch({ type: 'SET_STATUS', status: 'CONFIRM_LOCATION' });
         dispatch({
@@ -480,16 +533,28 @@ export function useChatFlow() {
         return;
       }
 
-      // 2. Request Browser Geolocation
-      await say('I need your location so the right team can find this spot. Please allow location access.');
-      if (job.dead) return;
+      await say('I need your location so the right team can find this spot.');
+      if (job.dead || requestId !== locationRequestRef.current) return;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 22_000);
 
       try {
-        const pos = await getBrowserPosition();
-        if (job.dead) return;
+        const pos = await acquireBrowserPosition({
+          signal: controller.signal,
+          onState: (phase) => {
+            if (requestId !== locationRequestRef.current) return;
+            dispatch({
+              type: 'SET_INTERACTION',
+              interaction: { id: `locating-${requestId}`, kind: 'locating', phase },
+            });
+          },
+        });
+        clearTimeout(timeout);
+        if (job.dead || requestId !== locationRequestRef.current) return;
 
         const geo = await reverseGeocode(pos.lat, pos.lng);
-        if (job.dead) return;
+        if (job.dead || requestId !== locationRequestRef.current) return;
 
         dispatch({ type: 'SET_STATUS', status: 'CONFIRM_LOCATION' });
         dispatch({
@@ -506,26 +571,16 @@ export function useChatFlow() {
             manualMode: false,
           },
         });
-      } catch {
-        // 3. Fallback to Manual Pin
-        if (job.dead) return;
-        await say("I couldn't detect your location automatically. Please tap your location on the map.");
-
-        dispatch({ type: 'SET_STATUS', status: 'CONFIRM_LOCATION' });
+      } catch (err) {
+        clearTimeout(timeout);
+        if (job.dead || requestId !== locationRequestRef.current) return;
+        const code = err?.code || 'unavailable';
         dispatch({
           type: 'SET_INTERACTION',
-          interaction: {
-            id: crypto.randomUUID(),
-            kind: 'location',
-            latitude: null,
-            longitude: null,
-            address: '',
-            ward: null,
-            source: 'manual',
-            accuracy: 50,
-            manualMode: true,
-          },
+          interaction: { id: `locating-${requestId}`, kind: 'locating', phase: code },
         });
+        dispatch({ type: 'SET_BUSY', busy: false });
+        return;
       }
 
       dispatch({ type: 'SET_BUSY', busy: false });
@@ -538,20 +593,20 @@ export function useChatFlow() {
     async (file) => {
       if (!file) return;
 
-      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
-      if (!validTypes.includes(file.type || '')) {
+      const validation = await validateImageFile(file);
+      if (!validation.ok) {
         dispatch({
           type: 'SET_ERROR',
-          text: 'Please upload a photo in JPG, PNG, or WebP format.',
+          text: validation.message,
           retryAction: null,
         });
         return;
       }
 
-      if (file.size > 15 * 1024 * 1024) {
+      if (file.size > MAX_SOURCE_IMAGE_BYTES) {
         dispatch({
           type: 'SET_ERROR',
-          text: 'Photo is too large. Please select a photo up to 15 MB.',
+          text: sourceImageTooLargeMessage(),
           retryAction: null,
         });
         return;
@@ -564,20 +619,31 @@ export function useChatFlow() {
       // Clear any prior errors
       dispatch({ type: 'CLEAR_ERROR' });
 
-      // Start job synchronously
-      const job = createPhotoJob(file, {
-        userId: user?.id || '',
-        getAccessToken: async () => {
-          const { data } = await supabase.auth.getSession();
-          if (data?.session?.access_token) {
-            return data.session.access_token;
-          }
-          const { data: refreshed } = await supabase.auth.refreshSession();
-          return refreshed?.session?.access_token || '';
-        },
-      });
+      let job;
+      try {
+        job = createPhotoJob(file, {
+          userId: user?.id || '',
+          getAccessToken: async () => {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.access_token) {
+              return data.session.access_token;
+            }
+            const { data: refreshed } = await supabase.auth.refreshSession();
+            return refreshed?.session?.access_token || '';
+          },
+        });
+      } catch (err) {
+        dispatch({
+          type: 'SET_ERROR',
+          text: err?.message || 'Could not use that photo. Please choose another.',
+          retryAction: null,
+        });
+        return;
+      }
 
       jobRef.current = job;
+      // New photo = clean draft (no stale image, location, category, note or request id)
+      dispatch({ type: 'SET_DRAFT', patch: createFreshDraft() });
       dispatch({ type: 'SET_JOB_ID', value: job.id });
 
       // Append photo message synchronously
@@ -674,7 +740,7 @@ export function useChatFlow() {
           id: crypto.randomUUID(),
           kind: 'chips',
           options: [
-            { id: 'skip_note', label: 'No, submit' },
+            { id: 'skip_note', label: 'Submit report' },
             { id: 'add_note', label: 'Add a note' },
           ],
         },
@@ -748,7 +814,7 @@ export function useChatFlow() {
       if (chipId === 'skip_note') {
         dispatch({
           type: 'APPEND_MESSAGE',
-          message: { id: crypto.randomUUID(), role: 'user', type: 'text', text: 'No, submit' },
+          message: { id: crypto.randomUUID(), role: 'user', type: 'text', text: chipLabel || 'Submit report' },
         });
         await runSubmitFlow({ ...draftRef.current });
         return;
@@ -759,8 +825,16 @@ export function useChatFlow() {
           type: 'APPEND_MESSAGE',
           message: { id: crypto.randomUUID(), role: 'user', type: 'text', text: 'Add a note' },
         });
-        await say('Type your note below (up to 500 characters).');
+        await say('Type your note below (up to 500 characters), then send it.');
         dispatch({ type: 'SET_STATUS', status: 'AWAIT_NOTE' });
+        dispatch({
+          type: 'SET_INTERACTION',
+          interaction: {
+            id: crypto.randomUUID(),
+            kind: 'chips',
+            options: [{ id: 'skip_note', label: 'Submit without note' }],
+          },
+        });
         return;
       }
 
@@ -855,11 +929,26 @@ export function useChatFlow() {
       if (state.status === 'AWAIT_NOTE') {
         const note = trimmed.slice(0, 500);
         dispatch({ type: 'SET_DRAFT', patch: { note } });
-        await say('Note added!');
-        await runSubmitFlow({ ...draftRef.current, note });
+        await say('Note added! Tap Submit report when you are ready, or type again to replace the note.');
+        dispatch({
+          type: 'SET_INTERACTION',
+          interaction: {
+            id: crypto.randomUUID(),
+            kind: 'chips',
+            options: [{ id: 'skip_note', label: 'Submit report' }],
+          },
+        });
+        return;
+      }
+
+      // Text typed at a moment where it can't be used: guide instead of staying silent
+      if (state.status === 'IDLE' || state.status === 'DONE') {
+        await say('Please send a photo of the issue using the camera or gallery button, and I will take it from there.');
+      } else if (state.interaction?.kind === 'chips') {
+        await say('Please pick one of the options above to continue.');
       }
     },
-    [state.status, say, runSubmitFlow],
+    [state.status, state.interaction, say, runSubmitFlow],
   );
 
   // Retry handler: Never starts a second job; re-enters the failed step
@@ -950,5 +1039,9 @@ export function useChatFlow() {
     handleUserText,
     retry,
     reset,
+    retryLocation: () => {
+      if (jobRef.current) resolveLocation(jobRef.current);
+    },
+    skipToManualLocation: () => openManualLocation(jobRef.current, 'Pin the exact spot on the map.'),
   };
 }

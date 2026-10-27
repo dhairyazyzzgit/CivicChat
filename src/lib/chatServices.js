@@ -1,106 +1,44 @@
 import { supabase } from './supabase';
 
-function arrayBufferToBase64(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-export async function findDuplicates(draft, job) {
+// Local duplicate check: same category within 50 m of the pinned location (no AI involved).
+export async function findDuplicates(draft) {
   try {
-    if (!Number.isFinite(draft?.lat) || !Number.isFinite(draft?.lng) || !draft?.category) {
+    if (!draft || !Number.isFinite(draft?.lat) || !Number.isFinite(draft?.lng) || !draft?.category) {
       return null;
     }
-
-    const { data: candidates, error } = await supabase.rpc('find_nearby_groups', {
+    const { data, error } = await supabase.rpc('find_nearby_groups', {
       p_lat: draft.lat,
       p_lng: draft.lng,
       p_category: draft.category,
       p_radius_m: 50,
     });
-
-    if (error || !Array.isArray(candidates) || candidates.length === 0) {
+    if (error || !Array.isArray(data) || data.length === 0 || !data[0]?.id) {
       return null;
     }
-
-    // Await blobs if needed
-    let aiBlob = job?.blobs?.ai;
-    if (!aiBlob && job?.blobs && typeof job.blobs.then === 'function') {
-      const resolved = await job.blobs;
-      aiBlob = resolved?.ai;
-    }
-    if (!aiBlob) {
-      return null;
-    }
-
-    const buffer = await aiBlob.arrayBuffer();
-    const newImageBase64 = arrayBufferToBase64(buffer);
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData?.session?.access_token;
-    if (!token) {
-      return null;
-    }
-
-    const testCandidates = candidates.slice(0, 2);
-
-    for (const candidate of testCandidates) {
-      if (!candidate.cover_image_url) continue;
-
-      const candidateThumbUrl = candidate.cover_image_url.replace(/\.jpg$/, '_t.jpg');
-
-      try {
-        const response = await fetch('/api/compare', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            newImageBase64,
-            mimeType: 'image/jpeg',
-            candidateImageUrl: candidateThumbUrl,
-            category: draft.category,
-          }),
-        });
-
-        if (!response.ok) {
-          continue;
-        }
-
-        const compResult = await response.json();
-        if (compResult?.same === true && Number(compResult.confidence || 0) >= 0.7) {
-          return {
-            mergeGroupId: candidate.id,
-            reportCount: Number(candidate.report_count || 1),
-            coverImageUrl: candidate.cover_image_url,
-            status: candidate.status || 'submitted',
-          };
-        }
-      } catch {
-        // Continue to next candidate or fallback
-        continue;
-      }
-    }
-
-    return null;
+    const g = data[0]; // nearest match
+    const reportedByMe = Boolean(g.reported_by_me);
+    return {
+      mergeGroupId: g.id,
+      reportedByMe,
+      reporterCount: Math.max(0, Number(g.reporter_count || 1) - (reportedByMe ? 1 : 0)),
+      status: g.status || 'submitted',
+    };
   } catch {
     return null;
   }
 }
 
 export async function submitReport(draft) {
-  if (!draft?.imageUrl) {
+  if (!draft || typeof draft !== 'object') {
+    throw new Error('Invalid report data provided.');
+  }
+  if (!draft.imageUrl || typeof draft.imageUrl !== 'string') {
     throw new Error('Photo is required to submit a report.');
   }
   if (!Number.isFinite(draft?.lat) || !Number.isFinite(draft?.lng)) {
     throw new Error('Location is required to submit a report.');
   }
-  if (!draft?.category) {
+  if (!draft.category || typeof draft.category !== 'string') {
     throw new Error('Category is required to submit a report.');
   }
 
@@ -136,7 +74,7 @@ export async function submitReport(draft) {
 
   const { data: groupData, error: groupError } = await supabase
     .from('issue_groups_ranked')
-    .select('ticket_code, category, severity, address, department_name, status, report_count, priority_score')
+    .select('ticket_code, category, severity, address, department_name, status, report_count, reporter_count, priority_score')
     .eq('id', groupId)
     .single();
 
@@ -155,6 +93,8 @@ export async function submitReport(draft) {
     status: groupData.status || 'submitted',
     reportCount: Number(groupData.report_count || rpcData.report_count || 1),
     priorityScore: Number(groupData.priority_score || 0),
+    reporterCount: Number(rpcData.reporter_count || groupData.reporter_count || 1),
+    alreadyReportedByMe: Boolean(rpcData.already_reported_by_me),
     merged: Boolean(rpcData.merged),
     duplicateSubmission: Boolean(rpcData.duplicate_submission),
   };

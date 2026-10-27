@@ -15,13 +15,13 @@ function ImageMessage({ src, alt = 'Uploaded issue photo', uploadStatus = 'uploa
   }, [uploadStatus]);
 
   return (
-    <div className="relative w-full max-w-[280px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
+    <div className="relative w-full max-w-[280px] overflow-hidden rounded-[20px] rounded-br-md border border-slate-200 bg-white shadow-sm">
       <img src={src} alt={alt} className="h-48 w-full object-cover" />
 
       {uploadStatus === 'uploading' && (
         <div className="absolute inset-x-2.5 bottom-2.5 flex items-center gap-1.5 rounded-full bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-white shadow backdrop-blur-xs">
           <Loader2 size={12} className="animate-spin text-teal-300" />
-          <span>Uploading...</span>
+          <span>Uploading photo…</span>
         </div>
       )}
 
@@ -42,7 +42,7 @@ function ImageMessage({ src, alt = 'Uploaded issue photo', uploadStatus = 'uploa
               className="inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-white/30"
             >
               <RefreshCw size={10} />
-              Retry
+              Retry upload
             </button>
           )}
         </div>

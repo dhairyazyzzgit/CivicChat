@@ -15,9 +15,12 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
+import { STREET_TILES } from '../lib/mapTiles';
 import { Link, useParams } from 'react-router-dom';
 import { categoryIcon, categoryLabel, formatDate, relativeTime, statusStyle } from '../lib/format';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import ResolutionFeedback from '../components/common/ResolutionFeedback';
 
 const PIN_ICON = L.divIcon({
   className: 'custom-map-pin',
@@ -65,6 +68,7 @@ function DetailSkeleton() {
 
 function ReportDetailPage() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [report, setReport] = useState(null);
   const [group, setGroup] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -103,7 +107,7 @@ function ReportDetailPage() {
       if (reportData.group_id) {
         const { data: groupData, error: groupError } = await supabase
           .from('issue_groups_ranked')
-          .select('id, ticket_code, status, report_count, category, severity, address, ward, department_name, created_at, updated_at, resolved_at, resolution_proof_url, resolution_note, lat, lng, days_open, priority_score')
+          .select('id, ticket_code, status, report_count, reporter_count, category, severity, address, ward, department_name, created_at, updated_at, resolved_at, resolution_proof_url, resolution_note, lat, lng, days_open, priority_score, reopen_count')
           .eq('id', reportData.group_id)
           .maybeSingle();
 
@@ -146,12 +150,14 @@ function ReportDetailPage() {
     const submittedTime = report?.created_at || group?.created_at;
 
     // Processing timestamp (from status_logs or group updated_at)
-    const procLog = logs.find((l) => l.to_status === 'processing');
-    const processingTime = procLog?.created_at || (currentStatus === 'processing' || currentStatus === 'resolved' ? group?.updated_at : null);
+    const lastLog = (to) => [...logs].reverse().find((l) => l.to_status === to);
+    const procLog = lastLog('processing');
+    const processingTime =
+      currentStatus === 'processing' || currentStatus === 'resolved' ? procLog?.created_at || group?.updated_at : null;
 
     // Resolved timestamp (from group resolved_at or status_logs)
-    const resLog = logs.find((l) => l.to_status === 'resolved');
-    const resolvedTime = group?.resolved_at || resLog?.created_at || null;
+    const resLog = lastLog('resolved');
+    const resolvedTime = currentStatus === 'resolved' ? group?.resolved_at || resLog?.created_at || null : null;
 
     return [
       {
@@ -184,7 +190,7 @@ function ReportDetailPage() {
   // Loading state
   if (loading) {
     return (
-      <main className="min-h-[calc(100vh-73px)] bg-slate-50/70 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="min-h-[calc(100vh-61px)] bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
         <DetailSkeleton />
       </main>
     );
@@ -193,8 +199,8 @@ function ReportDetailPage() {
   // Not Found state
   if (notFound) {
     return (
-      <main className="min-h-[calc(100vh-73px)] flex items-center justify-center bg-slate-50/70 px-4 py-12">
-        <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-slate-200/90 bg-white p-8 text-center shadow-xs">
+      <main className="min-h-[calc(100vh-61px)] flex items-center justify-center bg-slate-50 px-4 py-12">
+        <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-slate-200/90 bg-white p-8 text-center shadow-xs">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
             <AlertCircle size={28} />
           </div>
@@ -204,7 +210,7 @@ function ReportDetailPage() {
           </p>
           <Link
             to="/reports"
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-xs transition hover:bg-teal-800"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-xs transition hover:bg-blue-800"
           >
             <ArrowLeft size={15} />
             <span>Back to My Reports</span>
@@ -217,8 +223,8 @@ function ReportDetailPage() {
   // Error state
   if (error) {
     return (
-      <main className="min-h-[calc(100vh-73px)] flex items-center justify-center bg-slate-50/70 px-4 py-12">
-        <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-rose-200 bg-white p-8 text-center shadow-xs">
+      <main className="min-h-[calc(100vh-61px)] flex items-center justify-center bg-slate-50 px-4 py-12">
+        <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-xs">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
             <AlertCircle size={24} />
           </div>
@@ -227,7 +233,7 @@ function ReportDetailPage() {
           <button
             type="button"
             onClick={loadReportData}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-teal-800"
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-800"
           >
             <RefreshCw size={14} />
             <span>Retry</span>
@@ -246,8 +252,8 @@ function ReportDetailPage() {
   const hasCoords = Number.isFinite(group?.lat) && Number.isFinite(group?.lng);
 
   return (
-    <main className="min-h-[calc(100vh-73px)] bg-slate-50/70 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <main className="min-h-[calc(100vh-88px)] bg-slate-50 px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <div className="mx-auto max-w-4xl space-y-10">
         {/* Navigation Breadcrumb */}
         <div className="flex items-center justify-between">
           <Link
@@ -265,11 +271,11 @@ function ReportDetailPage() {
         </div>
 
         {/* Hero Card */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-xs">
-          <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-xl sm:text-2xl font-bold text-slate-900">
+                <span className="font-display inline-flex items-center gap-1.5 text-2xl text-slate-900 sm:text-3xl">
                   <span>{icon}</span>
                   <span>{label}</span>
                 </span>
@@ -277,6 +283,11 @@ function ReportDetailPage() {
                   <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
                   <span>{style.label}</span>
                 </span>
+                {group?.reopen_count > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">
+                    Reopened{group.reopen_count > 1 ? ` x${group.reopen_count}` : ''}
+                  </span>
+                )}
               </div>
               <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
                 <Calendar size={13} className="text-slate-400" />
@@ -285,21 +296,21 @@ function ReportDetailPage() {
             </div>
 
             {/* Duplicate Count Badge */}
-            {group?.report_count > 1 && (
-              <div className="inline-flex items-center gap-1.5 rounded-2xl bg-teal-50 px-3.5 py-2 text-xs font-semibold text-teal-800 ring-1 ring-teal-600/20 self-start sm:self-auto">
-                <Users size={15} className="text-teal-700" />
-                <span>{group.report_count} people reported this issue</span>
+            {group?.reporter_count > 1 && (
+              <div className="inline-flex items-center gap-1.5 rounded-2xl bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-800 ring-1 ring-blue-600/20 self-start sm:self-auto">
+                <Users size={15} className="text-blue-700" />
+                <span>{group.reporter_count} people reported this issue</span>
               </div>
             )}
           </div>
 
           <div className="grid grid-cols-1 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
             {/* Left: Original Photo */}
-            <div className="p-5 sm:p-6">
-              <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+            <div className="p-6 sm:p-8">
+              <span className="block eyebrow mb-2">
                 Citizen Photo
               </span>
-              <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
                 {report?.image_url ? (
                   <img
                     src={report.image_url}
@@ -315,13 +326,13 @@ function ReportDetailPage() {
             </div>
 
             {/* Right: Vertical Timeline */}
-            <div className="p-5 sm:p-6 flex flex-col justify-between">
+            <div className="p-6 sm:p-8 flex flex-col justify-between">
               <div>
-                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-4">
+                <span className="block eyebrow mb-4">
                   Status Progress
                 </span>
 
-                <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                <div className="relative pl-6 space-y-8 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
                   {timeline.map((step, idx) => {
                     const isPassed = step.reached;
                     const isCurrent = step.current;
@@ -332,14 +343,14 @@ function ReportDetailPage() {
                         <div
                           className={`absolute -left-6 top-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 bg-white transition-colors ${
                             isCurrent
-                              ? 'border-teal-600 ring-4 ring-teal-50'
+                              ? 'border-blue-600 ring-4 ring-blue-50'
                               : isPassed
-                                ? 'border-teal-600 bg-teal-600 text-white'
+                                ? 'border-blue-600 bg-blue-600 text-white'
                                 : 'border-slate-300 text-transparent'
                           }`}
                         >
                           {isPassed && !isCurrent && <CheckCircle2 size={12} className="text-white" />}
-                          {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-teal-600" />}
+                          {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />}
                         </div>
 
                         {/* Text */}
@@ -348,7 +359,7 @@ function ReportDetailPage() {
                             <h2
                               className={`text-xs sm:text-sm font-bold ${
                                 isCurrent
-                                  ? 'text-teal-900'
+                                  ? 'text-blue-900'
                                   : isPassed
                                     ? 'text-slate-800'
                                     : 'text-slate-400'
@@ -375,11 +386,11 @@ function ReportDetailPage() {
               </div>
 
               {/* Department & Severity Row */}
-              <div className="mt-6 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="mt-8 pt-5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-1.5 text-slate-700">
-                  <Building2 size={15} className="text-teal-700 flex-shrink-0" />
+                  <Building2 size={15} className="text-blue-700 flex-shrink-0" />
                   <div>
-                    <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <span className="block eyebrow !text-[9.5px]">
                       Assigned Department
                     </span>
                     <span className="font-semibold text-slate-800">
@@ -389,7 +400,7 @@ function ReportDetailPage() {
                 </div>
 
                 <div className="text-right">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <span className="block eyebrow !text-[9.5px]">
                     Severity
                   </span>
                   <span className="font-semibold capitalize text-slate-700">
@@ -402,20 +413,20 @@ function ReportDetailPage() {
         </div>
 
         {/* Location & Map Card */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-xs">
-          <div className="p-5 sm:p-6 border-b border-slate-100">
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
+          <div className="p-6 sm:p-8 border-b border-slate-100">
+            <span className="block eyebrow mb-1">
               Location & Address
             </span>
             <p className="flex items-start gap-1.5 text-xs sm:text-sm font-medium text-slate-800">
-              <MapPin size={16} className="mt-0.5 flex-shrink-0 text-teal-600" />
+              <MapPin size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />
               <span>{report?.address || group?.address || 'Pinned location'}</span>
             </p>
           </div>
 
           {/* Mini Non-interactive Leaflet Map */}
           {hasCoords && (
-            <div className="h-48 sm:h-56 w-full relative bg-slate-100">
+            <div className="leaflet-map-shell relative h-48 w-full bg-slate-100 sm:h-56">
               <MapContainer
                 center={[group.lat, group.lng]}
                 zoom={16}
@@ -427,10 +438,7 @@ function ReportDetailPage() {
                 className="h-full w-full pointer-events-none"
               >
                 <MapInvalidator lat={group.lat} lng={group.lng} />
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
+                <TileLayer {...STREET_TILES} />
                 <Marker position={[group.lat, group.lng]} icon={PIN_ICON} />
               </MapContainer>
             </div>
@@ -439,18 +447,18 @@ function ReportDetailPage() {
 
         {/* AI & Citizen Notes Card */}
         {(report?.ai_description || report?.note) && (
-          <div className="rounded-3xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-xs">
-            <div className="flex items-center gap-2 text-teal-700 mb-3">
-              <Sparkles size={16} />
+          <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-8 shadow-md">
+            <div className="flex items-center gap-2 text-blue-700 mb-4">
+              <FileText size={16} />
               <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-900">
                 Issue Analysis & Notes
               </h2>
             </div>
 
             {report?.ai_description && (
-              <div className="rounded-2xl bg-teal-50/50 border border-teal-100 p-4 mb-3">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-teal-800 mb-1">
-                  AI Vision Assessment
+              <div className="rounded-xl bg-blue-50/50 border border-blue-100 p-5 mb-4">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-blue-800 mb-2">
+                  Issue Detection
                 </span>
                 <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
                   {report.ai_description}
@@ -460,7 +468,7 @@ function ReportDetailPage() {
 
             {report?.note && (
               <div>
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                <span className="block eyebrow !text-[9.5px] mb-1">
                   Citizen Notes
                 </span>
                 <p className="text-xs sm:text-sm text-slate-700 leading-relaxed">
@@ -473,7 +481,7 @@ function ReportDetailPage() {
 
         {/* Resolution Proof Section (Only when resolved) */}
         {status === 'resolved' && (
-          <div className="overflow-hidden rounded-3xl border border-emerald-200/90 bg-emerald-50/30 p-5 sm:p-6 shadow-xs">
+          <div className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/30 p-6 sm:p-8 shadow-md">
             <div className="flex items-center gap-2 text-emerald-800 mb-4">
               <CheckCircle2 size={18} />
               <h2 className="text-sm font-bold tracking-tight text-slate-900">
@@ -484,7 +492,7 @@ function ReportDetailPage() {
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               {group?.resolution_proof_url && (
                 <div>
-                  <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                  <span className="block eyebrow mb-2">
                     Supervisor Proof Photo
                   </span>
                   <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-xs">
@@ -507,7 +515,7 @@ function ReportDetailPage() {
               )}
 
               <div className="flex flex-col justify-center">
-                <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                <span className="block eyebrow mb-1">
                   Department Resolution Note
                 </span>
                 <div className="rounded-2xl border border-emerald-200/80 bg-white p-4 text-xs sm:text-sm text-slate-700 shadow-xs">
@@ -521,6 +529,11 @@ function ReportDetailPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Citizen satisfaction check (only the person who reported, only while resolved) */}
+        {status === 'resolved' && group && report?.user_id === user?.id && (
+          <ResolutionFeedback group={group} userId={user?.id} onReopened={loadReportData} />
         )}
       </div>
     </main>

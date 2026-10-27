@@ -44,9 +44,11 @@ export function statusStyle(status = 'submitted') {
   };
 }
 
-export function priorityBucket(score = 0) {
+// Cut-offs: Medium >= 8, High >= 15, Critical >= 25.
+// Hazard-severity issues (e.g. live wires) are always Critical, regardless of score.
+export function priorityBucket(score = 0, severity = null) {
   const num = Number(score || 0);
-  if (num >= 25) {
+  if (severity === 'hazard' || num >= 25) {
     return { label: 'Critical', score: num, className: 'bg-rose-50 text-rose-800 border-rose-200' };
   }
   if (num >= 15) {
@@ -56,6 +58,12 @@ export function priorityBucket(score = 0) {
     return { label: 'Medium', score: num, className: 'bg-amber-50 text-amber-800 border-amber-200' };
   }
   return { label: 'Low', score: num, className: 'bg-slate-100 text-slate-700 border-slate-200' };
+}
+
+// True for High and Critical (score 15+ or any hazard-severity issue).
+export function isHighPriority(issue) {
+  const label = priorityBucket(issue?.priority_score, issue?.severity).label;
+  return label === 'High' || label === 'Critical';
 }
 
 export function formatDate(dateString) {

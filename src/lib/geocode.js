@@ -82,7 +82,20 @@ export async function reverseGeocode(lat, lng, signal) {
       const suburb = addr.suburb || addr.neighbourhood || '';
       const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
 
-      const parts = [road, neighbourhood || suburb, city].filter(Boolean);
+      const placeName =
+        (payload?.name && payload.name !== road ? payload.name : '') ||
+        addr.building || addr.amenity || addr.shop || addr.tourism || addr.house_name || '';
+      const houseRoad = [addr.house_number, road].filter(Boolean).join(' ');
+      const seen = new Set();
+      let parts = [placeName, houseRoad, neighbourhood || suburb, city].filter((p) => {
+        const k = String(p || '').trim().toLowerCase();
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      if (parts.length === 0 && payload?.display_name) {
+        parts = String(payload.display_name).split(',').map((x) => x.trim()).filter(Boolean).slice(0, 4);
+      }
       const formattedAddress = parts.length > 0 ? parts.join(', ') : fallbackAddress;
       const ward = addr.suburb || addr.neighbourhood || addr.city_district || null;
 
@@ -103,6 +116,37 @@ export async function reverseGeocode(lat, lng, signal) {
       if (signal) {
         signal.removeEventListener('abort', onAbort);
       }
+    }
+  });
+}
+
+// Forward geocode a typed address (India). Returns { lat, lng } or null.
+export async function forwardGeocode(query, signal) {
+  const q = String(query || '').trim();
+  if (q.length < 3) return null;
+  return enqueue(async () => {
+    if (signal?.aborted) return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const onAbort = () => controller.abort();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('format', 'jsonv2');
+      url.searchParams.set('limit', '1');
+      url.searchParams.set('countrycodes', 'in');
+      url.searchParams.set('q', q);
+      const response = await fetch(url.toString(), { headers: { 'Accept-Language': 'en' }, signal: controller.signal });
+      if (!response.ok) return null;
+      const rows = await response.json();
+      const lat = Number(rows?.[0]?.lat);
+      const lng = Number(rows?.[0]?.lon);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener('abort', onAbort);
     }
   });
 }

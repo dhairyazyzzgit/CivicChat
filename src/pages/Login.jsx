@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { safeRedirect } from '../lib/useReportTarget';
+import { AuthShell, inputClass } from '../components/common/AuthShell';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -11,19 +14,17 @@ function LoginPage() {
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+  const redirectParam = new URLSearchParams(location.search).get('redirect');
+  const signupHref = redirectParam ? `/signup?redirect=${encodeURIComponent(redirectParam)}` : '/signup?redirect=%2Fchat';
 
   useEffect(() => {
     if (!user) {
       return;
     }
 
-    const params = new URLSearchParams(location.search);
-    const redirectTo = params.get('redirect') || '/chat';
-
-    navigate(role === 'admin' ? '/admin' : redirectTo.startsWith('/') ? redirectTo : '/chat', {
-      replace: true,
-    });
-  }, [location.search, navigate, role, user]);
+    navigate(role === 'admin' ? '/admin' : safeRedirect(redirectParam), { replace: true });
+  }, [redirectParam, navigate, role, user]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -65,9 +66,7 @@ function LoginPage() {
       if (profile?.role === 'admin') {
         navigate('/admin', { replace: true });
       } else {
-        const params = new URLSearchParams(location.search);
-        const redirectTo = params.get('redirect') || '/chat';
-        navigate(redirectTo, { replace: true });
+        navigate(safeRedirect(redirectParam), { replace: true });
       }
     } catch (error) {
       const message = error?.message || 'Unable to sign in right now.';
@@ -86,63 +85,74 @@ function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-[calc(100vh-73px)] items-center justify-center bg-background px-4 py-10">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-8">
-        <div className="mb-6 text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.14em] text-primary">Welcome back</p>
-          <h1 className="mt-3 text-3xl font-bold text-slate-900">Login</h1>
+    <AuthShell
+      eyebrow="Welcome back"
+      title="Log in to report"
+      subtitle="Pick up where you left off and track your reports."
+      footer={
+        <>
+          New here?{' '}
+          <Link to={signupHref} className="font-semibold text-blue-700 underline decoration-blue-700/30 underline-offset-4 hover:decoration-blue-700">
+            Create a free account
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+        <div>
+          <label htmlFor="login-email" className="mb-2 block text-sm font-medium text-slate-700">Email</label>
+          <input
+            id="login-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            className={inputClass}
+          />
+          {errors.email && <p className="mt-2 text-sm text-danger">{errors.email}</p>}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-          <div>
-            <label htmlFor="login-email" className="mb-2 block text-sm font-medium text-slate-700">Email</label>
-            <input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/15"
-            />
-            {errors.email && <p className="mt-2 text-sm text-danger">{errors.email}</p>}
-          </div>
-
-          <div>
-            <label htmlFor="login-password" className="mb-2 block text-sm font-medium text-slate-700">Password</label>
+        <div>
+          <label htmlFor="login-password" className="mb-2 block text-sm font-medium text-slate-700">Password</label>
+          <div className="relative">
             <input
               id="login-password"
-              type="password"
+              type={showPw ? 'text' : 'password'}
+              autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="At least 8 characters"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/15"
+              className={`${inputClass} pr-12`}
             />
-            {errors.password && <p className="mt-2 text-sm text-danger">{errors.password}</p>}
+            <button
+              type="button"
+              onClick={() => setShowPw((v) => !v)}
+              aria-label={showPw ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:text-slate-700"
+            >
+              {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
+          {errors.password && <p className="mt-2 text-sm text-danger">{errors.password}</p>}
+        </div>
 
-          {errors.form && (
-            <div className="rounded-xl border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
-              {errors.form}
-            </div>
-          )}
+        {errors.form && (
+          <div role="alert" className="rounded-xl border border-rose-200/20 bg-rose-50/60 px-3 py-2.5 text-sm text-rose-700">
+            {errors.form}
+          </div>
+        )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#0b5f5b] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? 'Signing in...' : 'Log in'}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-slate-600">
-          Need an account?{' '}
-          <Link to="/signup" className="font-semibold text-primary hover:text-[#0b5f5b]">
-            Sign up
-          </Link>
-        </p>
-      </div>
-    </main>
+        <button
+          type="submit"
+          disabled={loading}
+          className="btn btn-primary w-full !min-h-14 !text-base"
+        >
+          {loading && <Loader2 size={18} className="animate-spin" />}
+          {loading ? 'Signing in…' : 'Log in'}
+        </button>
+      </form>
+    </AuthShell>
   );
 }
 

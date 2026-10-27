@@ -1,7 +1,18 @@
 import imageCompression from 'browser-image-compression';
 import * as exifrModule from 'exifr';
 import { canLaunchAiAnalysis, markAiRequestStarted, markAiRequestUnavailable } from './aiGuard';
+import { validateImageFile } from './imageFile';
 import { supabase } from './supabase';
+import {
+  AI_MAX_DIMENSION,
+  MAX_COMPRESSED_AI_MB,
+  MAX_COMPRESSED_MAIN_MB,
+  MAX_COMPRESSED_THUMB_MB,
+  MAX_SOURCE_IMAGE_BYTES,
+  MAIN_MAX_DIMENSION,
+  THUMB_MAX_DIMENSION,
+  sourceImageTooLargeMessage,
+} from './uploadLimits';
 
 const exifr = exifrModule?.default ?? exifrModule;
 
@@ -25,6 +36,20 @@ function bufferToHex(buffer) {
 }
 
 export function createPhotoJob(file, { userId, getAccessToken }) {
+  if (!file || typeof file !== 'object') {
+    throw new Error('Invalid file provided');
+  }
+  const declaredType = String(file.type || '').toLowerCase();
+  if (
+    declaredType &&
+    !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(declaredType)
+  ) {
+    throw new Error('Please choose a JPG, PNG, or WebP photo.');
+  }
+  if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+    throw new Error(sourceImageTooLargeMessage());
+  }
+
   const id = crypto.randomUUID();
   const uuid = crypto.randomUUID();
   const objectUrl = typeof URL !== 'undefined' && file ? URL.createObjectURL(file) : '';
@@ -75,28 +100,26 @@ export function createPhotoJob(file, { userId, getAccessToken }) {
 
   (async () => {
     try {
+      const validation = await validateImageFile(file);
+      if (!validation.ok) {
+        blobsResolve({ status: 'error', message: validation.message });
+        return;
+      }
+
+      const compressOptions = (maxWidthOrHeight, maxSizeMB, quality) => ({
+        maxWidthOrHeight,
+        maxSizeMB,
+        initialQuality: quality,
+        fileType: 'image/jpeg',
+        alwaysKeepResolution: false,
+        exifOrientation: true,
+        useWebWorker: false,
+      });
+
       const [main, thumb, ai] = await Promise.all([
-        imageCompression(file, {
-          maxWidthOrHeight: 1280,
-          maxSizeMB: 0.35,
-          initialQuality: 0.8,
-          fileType: 'image/jpeg',
-          alwaysKeepResolution: false,
-        }),
-        imageCompression(file, {
-          maxWidthOrHeight: 360,
-          maxSizeMB: 0.04,
-          initialQuality: 0.7,
-          fileType: 'image/jpeg',
-          alwaysKeepResolution: false,
-        }),
-        imageCompression(file, {
-          maxWidthOrHeight: 640,
-          maxSizeMB: 0.08,
-          initialQuality: 0.7,
-          fileType: 'image/jpeg',
-          alwaysKeepResolution: false,
-        }),
+        imageCompression(file, compressOptions(MAIN_MAX_DIMENSION, MAX_COMPRESSED_MAIN_MB, 0.82)),
+        imageCompression(file, compressOptions(THUMB_MAX_DIMENSION, MAX_COMPRESSED_THUMB_MB, 0.7)),
+        imageCompression(file, compressOptions(AI_MAX_DIMENSION, MAX_COMPRESSED_AI_MB, 0.7)),
       ]);
 
       blobs.main = main;
@@ -105,7 +128,12 @@ export function createPhotoJob(file, { userId, getAccessToken }) {
       const result = { status: 'ok', main, thumb, ai };
       blobsResolve(result);
     } catch (err) {
-      const result = { status: 'error', message: err?.message || 'Photo compression failed.' };
+      const result = {
+        status: 'error',
+        message:
+          err?.message ||
+          'Photo compression failed. If this is a HEIC photo, save it as JPG and try again.',
+      };
       blobsResolve(result);
     }
   })();
@@ -129,7 +157,7 @@ export function createPhotoJob(file, { userId, getAccessToken }) {
       const { data: userData } = await supabase.auth.getUser();
       effectiveUserId = userData?.user?.id;
     }
-    if (!effectiveUserId) {
+    if (!effectiveUserId || typeof effectiveUserId !== 'string') {
       return { status: 'error', message: 'Please sign in to upload photos.' };
     }
 
@@ -171,10 +199,14 @@ export function createPhotoJob(file, { userId, getAccessToken }) {
     const { data: mainData } = supabase.storage.from('report-images').getPublicUrl(mainPath);
     const { data: thumbData } = supabase.storage.from('report-images').getPublicUrl(thumbPath);
 
+    if (!mainData?.publicUrl || !thumbData?.publicUrl) {
+      return { status: 'error', message: 'Failed to generate public URLs for uploaded images.' };
+    }
+
     return {
       status: 'ok',
-      mainUrl: mainData?.publicUrl || '',
-      thumbUrl: thumbData?.publicUrl || '',
+      mainUrl: mainData.publicUrl,
+      thumbUrl: thumbData.publicUrl,
     };
   }
 
@@ -247,7 +279,12 @@ export function createPhotoJob(file, { userId, getAccessToken }) {
     }
 
     // Check aiGuard
-    const guard = canLaunchAiAnalysis();
+    let guard = canLaunchAiAnalysis();
+    if (!guard.allowed && guard.reason === 'cooldown') {
+      await new Promise((r) => setTimeout(r, 3100));
+      if (isDead) return { status: 'manual', reason: 'error' };
+      guard = canLaunchAiAnalysis();
+    }
     if (!guard.allowed) {
       return { status: 'manual', reason: guard.reason === 'limit' ? 'limit' : 'busy' };
     }
@@ -280,18 +317,24 @@ export function createPhotoJob(file, { userId, getAccessToken }) {
     try {
       const imageBase64 = arrayBufferToBase64(arrayBuffer);
 
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          mimeType: 'image/jpeg',
-          imageBase64,
-        }),
-        signal: aiController.signal,
-      });
+      const callAnalyze = () =>
+        fetch('/api/analyze', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            mimeType: 'image/jpeg',
+            imageBase64,
+          }),
+          signal: aiController.signal,
+        });
+      let res = await callAnalyze();
+      if (res.status >= 500 && !isDead) {
+        await new Promise((r) => setTimeout(r, 1200));
+        if (!isDead) res = await callAnalyze();
+      }
 
       clearTimeout(timeoutId);
 

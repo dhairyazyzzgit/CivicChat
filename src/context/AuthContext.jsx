@@ -82,6 +82,13 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signUp = async (email, password, name) => {
+    if (!email || !password || !name) {
+      throw new Error('Email, password, and name are required');
+    }
+    if (password.length < 6) {
+      throw new Error('Password must be at least 6 characters');
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -103,6 +110,10 @@ export function AuthProvider({ children }) {
   };
 
   const signIn = async (email, password) => {
+    if (!email || !password) {
+      throw new Error('Email and password are required');
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
@@ -126,6 +137,13 @@ export function AuthProvider({ children }) {
       throw error;
     }
 
+    try {
+      Object.keys(window.sessionStorage)
+        .filter((k) => k.startsWith('civicchat:'))
+        .forEach((k) => window.sessionStorage.removeItem(k));
+    } catch {
+      // ignore
+    }
     setUser(null);
     setProfile(null);
   };

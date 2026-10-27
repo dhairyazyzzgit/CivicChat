@@ -1,9 +1,10 @@
 import L from 'leaflet';
-import { Loader2, Locate, MapPin } from 'lucide-react';
+import { Layers, Loader2, Locate, MapPin, Pencil, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import { reverseGeocode } from '../../lib/geocode';
-import { getBrowserPosition, isValidCoords } from '../../lib/location';
+import { MapContainer, Marker, TileLayer, ZoomControl, useMap, useMapEvents } from 'react-leaflet';
+import { forwardGeocode, reverseGeocode } from '../../lib/geocode';
+import { SATELLITE_TILES, STREET_TILES } from '../../lib/mapTiles';
+import { acquireBrowserPosition, isValidCoords, locationStateMessage } from '../../lib/location';
 
 const INDIA_CENTER = { lat: 20.5937, lng: 78.9629 };
 
@@ -87,7 +88,15 @@ function MapCard({
   const [ward, setWard] = useState(initialWard);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isGettingPosition, setIsGettingPosition] = useState(false);
+  const [locationHint, setLocationHint] = useState('');
   const [browserLocationUnavailable, setBrowserLocationUnavailable] = useState(false);
+  const [typedAddress, setTypedAddress] = useState('');
+  const [showTyped, setShowTyped] = useState(!initialHasCoords || manualMode);
+  const [isFinding, setIsFinding] = useState(false);
+  const [findHint, setFindHint] = useState('');
+  const [satellite, setSatellite] = useState(false);
+  // who placed the pin: 'none' (auto GPS/photo), 'find' (from typed address), 'drag' (user placed it)
+  const [pinSetBy, setPinSetBy] = useState('none');
 
   useEffect(() => {
     if (initialAddress) {
@@ -135,20 +144,27 @@ function MapCard({
   const handlePinMove = (nextLat, nextLng) => {
     setCoords({ lat: nextLat, lng: nextLng });
     setHasUserMovedPin(true);
+    setPinSetBy('drag');
     setSource('manual');
     triggerGeocode(nextLat, nextLng);
   };
 
   const handleUseCurrentLocation = async () => {
     setIsGettingPosition(true);
+    setLocationHint(locationStateMessage('initializing'));
     try {
-      const pos = await getBrowserPosition();
+      const pos = await acquireBrowserPosition({
+        onState: (phase) => setLocationHint(locationStateMessage(phase)),
+      });
       setCoords({ lat: pos.lat, lng: pos.lng });
       setAccuracy(pos.accuracy);
       setSource('gps');
       setHasUserMovedPin(true);
+      setPinSetBy('drag');
       triggerGeocode(pos.lat, pos.lng);
+      setLocationHint('');
     } catch (err) {
+      setLocationHint(locationStateMessage(err?.code || 'unavailable'));
       if (err?.code === 'denied' || err?.code === 'unsupported') {
         setBrowserLocationUnavailable(true);
       }
@@ -157,44 +173,79 @@ function MapCard({
     }
   };
 
-  const handleConfirm = () => {
-    if (confirmedRef.current || isSaving) return;
+  const needsFind = typedAddress.trim().length > 0 && pinSetBy === 'none';
+
+  const handleConfirm = async () => {
+    if (confirmedRef.current || isSaving || isFinding) return;
+    // A typed address means "this is the location": move the pin there first, then let the user confirm
+    if (needsFind) {
+      const ok = await handleFindTyped();
+      if (ok) {
+        setShowTyped(true);
+        setMode('adjust');
+      }
+      return;
+    }
     if (mode === 'manual' && !hasUserMovedPin) return;
 
     confirmedRef.current = true;
     onConfirm?.({
       lat: coords.lat,
       lng: coords.lng,
-      address: address || `Pinned location (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)})`,
+      address:
+        typedAddress.trim().slice(0, 200) ||
+        address ||
+        `Pinned location (${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)})`,
       ward: ward || null,
       source,
     });
   };
 
+  // Drop the pin near the typed address (user can fine-tune, then confirm)
+  const handleFindTyped = async () => {
+    const q = typedAddress.trim();
+    if (q.length < 3 || isFinding || isSaving) return false;
+    setIsFinding(true);
+    setFindHint('');
+    const found = await forwardGeocode(q);
+    setIsFinding(false);
+    if (!found) {
+      setFindHint("Couldn't find that on the map. Add the area or city, or switch to 'Adjust pin' and tap the map.");
+      return false;
+    }
+    setCoords(found);
+    setAccuracy(30);
+    setSource('manual');
+    setHasUserMovedPin(true);
+    setPinSetBy('find');
+    setFindHint('Pin placed near this address. Drag it to fine-tune, then confirm.');
+    return true;
+  };
+
   const handleSwitchToAdjust = () => {
+    setShowTyped(true);
     setMode('adjust');
     onAdjust?.();
   };
 
-  const canConfirm = !isSaving && (mode !== 'manual' || hasUserMovedPin);
+  const canConfirm = !isSaving && !isFinding && (needsFind || mode !== 'manual' || hasUserMovedPin);
   const isAdjustOrManual = mode === 'adjust' || mode === 'manual';
 
   return (
-    <div className="w-full max-w-[340px] overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)] ring-1 ring-slate-100">
-      <div className="h-[240px] w-full overflow-hidden rounded-t-[22px] border-b border-slate-200 bg-slate-100 relative">
+    <div className="w-full max-w-[340px] overflow-hidden rounded-[22px] rounded-tl-md border border-slate-200 bg-white shadow-md">
+      <div className="leaflet-map-shell relative h-[240px] w-full overflow-hidden rounded-t-[22px] border-b border-slate-200 bg-slate-100">
         <MapContainer
           center={[coords.lat, coords.lng]}
           zoom={accuracy < 100 ? 17 : 15}
           scrollWheelZoom={false}
           zoomControl={false}
+          maxZoom={20}
           className="h-[240px] w-full"
         >
+          <ZoomControl position="bottomright" />
           <MapController coords={coords} accuracy={accuracy} />
           <MapClickHandler onMapClick={handlePinMove} enabled={isAdjustOrManual} />
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <TileLayer key={satellite ? 'sat' : 'street'} {...(satellite ? SATELLITE_TILES : STREET_TILES)} />
           <Marker
             position={[coords.lat, coords.lng]}
             draggable={isAdjustOrManual}
@@ -209,8 +260,19 @@ function MapCard({
           />
         </MapContainer>
 
+        <button
+          type="button"
+          onClick={() => setSatellite((v) => !v)}
+          title={satellite ? 'Show map' : 'Show satellite'}
+          aria-label={satellite ? 'Show map view' : 'Show satellite view'}
+          className="absolute bottom-2 left-2 z-50 flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow ring-1 ring-slate-200 transition hover:bg-white active:scale-95"
+        >
+          <Layers size={13} className="text-primary" />
+          {satellite ? 'Map' : 'Satellite'}
+        </button>
+
         {isAdjustOrManual && (
-          <div className="pointer-events-none absolute inset-x-2 top-2 z-[1000] flex justify-center">
+          <div className="pointer-events-none absolute inset-x-2 top-2 z-50 flex justify-center">
             <span className="rounded-full bg-slate-900/75 px-3 py-1 text-[11px] font-medium text-white shadow backdrop-blur-xs">
               Tap or drag pin to adjust
             </span>
@@ -241,6 +303,62 @@ function MapCard({
           </div>
         </div>
 
+        {showTyped ? (
+          <div className="space-y-1">
+            <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <Pencil size={11} className="text-primary" />
+              Or type the address / landmark
+            </label>
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1 transition focus-within:border-teal-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-600/15">
+              <input
+                type="text"
+                value={typedAddress}
+                maxLength={200}
+                disabled={isSaving}
+                onChange={(e) => {
+                  setTypedAddress(e.target.value);
+                  setPinSetBy((p) => (p === 'find' ? 'none' : p));
+                  if (findHint) setFindHint('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (mode !== 'confirm') handleFindTyped();
+                  }
+                }}
+                placeholder="e.g. Near City Mall, 5th Cross, Indiranagar"
+                className="min-w-0 flex-1 border-0 bg-transparent py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed"
+              />
+              {mode !== 'confirm' && (
+                <button
+                  type="button"
+                  onClick={handleFindTyped}
+                  disabled={isSaving || isFinding || typedAddress.trim().length < 3}
+                  title="Find on map"
+                  aria-label="Find on map"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-teal-700 transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isFinding ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                </button>
+              )}
+            </div>
+            {findHint && <p className="text-[11px] leading-snug text-slate-500">{findHint}</p>}
+            {needsFind && (
+              <p className="text-[11px] leading-snug text-slate-500">I'll place the pin at this address; you can fine-tune it before confirming.</p>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowTyped(true)}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-teal-700 transition hover:text-teal-800 disabled:opacity-50"
+          >
+            <Pencil size={11} />
+            Type the address instead
+          </button>
+        )}
+
         <div className="flex flex-col gap-2 pt-1">
           {mode === 'confirm' ? (
             <div className="flex gap-2">
@@ -248,9 +366,9 @@ function MapCard({
                 type="button"
                 onClick={handleConfirm}
                 disabled={!canConfirm}
-                className="flex-1 rounded-full bg-primary px-3 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-[#0b5f5b] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-primary flex-1 !min-h-11 !text-xs"
               >
-                Yes, that's right
+                {isFinding ? 'Finding…' : needsFind ? 'Find on map' : "Yes, that's right"}
               </button>
               <button
                 type="button"
@@ -273,7 +391,7 @@ function MapCard({
                   {isGettingPosition ? (
                     <>
                       <Loader2 size={13} className="animate-spin text-primary" />
-                      <span>Locating you...</span>
+                      <span>{locationHint || 'Fetching your location…'}</span>
                     </>
                   ) : (
                     <>
@@ -287,9 +405,9 @@ function MapCard({
                 type="button"
                 onClick={handleConfirm}
                 disabled={!canConfirm}
-                className="w-full rounded-full bg-primary px-3 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-[#0b5f5b] disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-primary w-full !text-sm"
               >
-                Confirm location
+                {isFinding ? 'Finding…' : needsFind ? 'Find on map' : 'Confirm location'}
               </button>
             </div>
           )}
