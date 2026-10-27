@@ -13,7 +13,7 @@ Reporting civic problems like potholes, open drains, and garbage to municipal au
 
 ## Solution
 
-CivicChat replaces complex forms with a simple chatbot interface. Citizens send a photo, AI suggests the issue type, the app captures location automatically, and the report is routed to the correct department. Duplicate reports are intelligently grouped to raise priority. Citizens track progress in real-time, and admins use a map dashboard to manage issues with mandatory proof of resolution.
+shikayaat replaces complex forms with a simple chatbot interface. Citizens send a photo, AI suggests the issue type, the app captures location automatically, and the report is routed to the correct department. Duplicate reports are intelligently grouped to raise priority. Citizens track progress in real-time, and admins use a map dashboard to manage issues with mandatory proof of resolution.
 
 ## Key Features
 
@@ -66,7 +66,7 @@ CivicChat replaces complex forms with a simple chatbot interface. Citizens send 
 
 ## Architecture
 
-CivicChat follows a modern three-tier architecture with business logic pushed to the database layer for security and consistency.
+shikayaat follows a modern three-tier architecture with business logic pushed to the database layer for security and consistency.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -155,7 +155,7 @@ sequenceDiagram
 1. **Clone the repository**
    ```bash
    git clone <your-repo-url>
-   cd CivicChat
+   cd shikayaat
    ```
 
 2. **Install dependencies**
@@ -240,7 +240,7 @@ sequenceDiagram
 
 3. **Configure Supabase**
    - In Supabase Dashboard → Authentication → URL Configuration
-   - Set Site URL to your Vercel URL (e.g., `https://civicchat-xyz.vercel.app`)
+   - Set Site URL to your Vercel URL (e.g., `https://shikayaat-xyz.vercel.app`)
    - Add the same URL to Redirect URLs
 
 4. **Test the deployment**
@@ -256,7 +256,7 @@ sequenceDiagram
 
 ## How Duplicate Detection Works
 
-CivicChat uses a two-stage duplicate detection system to group reports of the same physical issue:
+shikayaat uses a two-stage duplicate detection system to group reports of the same physical issue:
 
 ### Stage 1: Geospatial Proximity (PostGIS)
 
