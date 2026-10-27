@@ -1,4 +1,4 @@
-# CivicChat
+# Shikayaat - Report it. Resolve it.
 
 A chat-based civic issue reporting web application that enables citizens to report public infrastructure problems (potholes, garbage, open drains, waterlogging, electrical hazards, streetlights, fallen trees) through a conversational AI interface. The app automatically detects issue types using computer vision, captures location data, routes reports to municipal departments, groups duplicate reports to raise priority, and provides real-time status tracking.
 
