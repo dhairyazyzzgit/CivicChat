@@ -132,6 +132,10 @@ A report within **50 m** of an open issue of the **same category** is merged int
 
 <img src="docs/screenshots/report-detail.jpg" width="520"/>
 
+**Resolved ticket: admin proof photo, resolution note and citizen feedback**
+
+<img src="docs/screenshots/resolve.jpg" width="520"/>
+
 ---
 
 ## 🧰 Tech Stack
