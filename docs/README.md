@@ -1,6 +1,6 @@
-# Shikayaat
+# Shikaayat
 
-This repository contains the initial project skeleton for the Shikayaat web app.
+This repository contains the initial project skeleton for the Shikaayat web app.
 
 ## Stack
 
