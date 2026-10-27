@@ -124,7 +124,7 @@ A report within **50 m** of an open issue of the **same category** is merged int
 |:---:|:---:|
 | <img src="docs/screenshots/chat.jpg" width="300"/> | <img src="docs/screenshots/merged.jpg" width="300"/> |
 
-| My Reports | Admin dashboard (map, stats, ranked list) |
+| Admin dashboard (map, stats, ranked list) |
 |:---:|:---:|
 | <img src="docs/screenshots/reports.jpg" width="300"/> | <img src="docs/screenshots/admin.jpg" width="300"/> |
 
