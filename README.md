@@ -124,13 +124,9 @@ A report within **50 m** of an open issue of the **same category** is merged int
 |:---:|:---:|
 | <img src="docs/screenshots/chat.jpg" width="300"/> | <img src="docs/screenshots/merged.jpg" width="300"/> |
 
-| My Reports | Admin dashboard (map, stats, ranked list) |
+| Admin dashboard (map, stats, ranked list) | Resolved ticket: proof, note, citizen feedback |
 |:---:|:---:|
-| <img src="docs/screenshots/reports.jpg" width="300"/> | <img src="docs/screenshots/admin.jpg" width="300"/> |
-
-| Report detail: timeline, map, AI analysis | Resolved ticket: proof, note, citizen feedback |
-|:---:|:---:|
-| <img src="docs/screenshots/report-detail.jpg" width="300"/> | <img src="docs/screenshots/resolve.jpg" width="300"/> |
+| <img src="docs/screenshots/admin.jpg" width="300"/> | <img src="docs/screenshots/resolve.jpg" width="300"/> |
 
 ---
 
