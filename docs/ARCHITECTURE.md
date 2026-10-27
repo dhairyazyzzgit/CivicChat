@@ -1,10 +1,10 @@
-# Shikayaat Architecture Documentation
+# Shikaayat Architecture Documentation
 
-This document describes the technical architecture, data models, and key algorithms of Shikayaat.
+This document describes the technical architecture, data models, and key algorithms of Shikaayat.
 
 ## System Overview
 
-Shikayaat is a full-stack web application built with React on the frontend and Supabase (PostgreSQL + PostGIS + Storage) on the backend. AI processing is handled by Vercel serverless functions that call the Google Gemini API.
+Shikaayat is a full-stack web application built with React on the frontend and Supabase (PostgreSQL + PostGIS + Storage) on the backend. AI processing is handled by Vercel serverless functions that call the Google Gemini API.
 
 ### Technology Stack
 
