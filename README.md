@@ -7,7 +7,7 @@
 **Snap a photo of a broken street → AI names the problem → your location is captured → the right department gets a ticket → you track it until it is fixed *with proof*.**
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Open%20App-success?style=for-the-badge)](https://shikayaat.vercel.app)
-[![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch-red?style=for-the-badge)](ADD_VIDEO_URL)
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch-red?style=for-the-badge)](https://drive.google.com/file/d/1X9m1txIx2eyD65r9lylQLshT5jKaMucu/view?usp=sharing)
 [![Architecture](https://img.shields.io/badge/Architecture-Read-blue?style=for-the-badge)](docs/ARCHITECTURE.md)
 
 ![React](https://img.shields.io/badge/React_19-20232A?logo=react&logoColor=61DAFB)
@@ -426,7 +426,7 @@ npm run build && npm run preview
 | **Live app** | https://shikayaat.vercel.app |
 | **Health check** | https://shikayaat.vercel.app/api/health |
 | **Repository** | https://github.com/dhairyazyzzgit/Shikaayat-Report-Resolve |
-| **Demo video** | ADD_VIDEO_URL |
+| **Demo video** | https://drive.google.com/file/d/1X9m1txIx2eyD65r9lylQLshT5jKaMucu/view?usp=sharing |
 
 **Hosting:** Vercel (SPA + serverless functions) · Supabase (DB, Auth, Storage). [`vercel.json`](vercel.json) configures SPA rewrites and a 30 s function timeout for AI calls.
 
@@ -506,7 +506,7 @@ Shikaayat-Report-Resolve/
 | **Problem Statement** | Citizens struggle to report civic issues; duplicates bury urgent ones; and "resolved" has no proof. |
 | **GitHub Repository** | https://github.com/dhairyazyzzgit/Shikaayat-Report-Resolve |
 | **Deployed Application** | https://shikayaat.vercel.app |
-| **Demo Video** | ADD_VIDEO_URL |
+| **Demo Video** | https://drive.google.com/file/d/1X9m1txIx2eyD65r9lylQLshT5jKaMucu/view?usp=sharing |
 | **Tech Stack** | React 19, Vite, Tailwind v4, Supabase (Auth, Postgres + PostGIS, Storage), Vercel Serverless, Google Gemini, Leaflet |
 | **Major Features** | Chat-based reporting · AI issue detection · 3-tier location capture · geospatial duplicate merging with fair priority · admin map dashboard · proof-required resolution · citizen reopen and rating loop · notifications |
 
