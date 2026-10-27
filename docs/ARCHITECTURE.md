@@ -1,10 +1,10 @@
-# CivicChat Architecture Documentation
+# shikayaat Architecture Documentation
 
-This document describes the technical architecture, data models, and key algorithms of CivicChat.
+This document describes the technical architecture, data models, and key algorithms of shikayaat.
 
 ## System Overview
 
-CivicChat is a full-stack web application built with React on the frontend and Supabase (PostgreSQL + PostGIS + Storage) on the backend. AI processing is handled by Vercel serverless functions that call the Google Gemini API.
+shikayaat is a full-stack web application built with React on the frontend and Supabase (PostgreSQL + PostGIS + Storage) on the backend. AI processing is handled by Vercel serverless functions that call the Google Gemini API.
 
 ### Technology Stack
 
