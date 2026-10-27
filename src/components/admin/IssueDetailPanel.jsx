@@ -195,22 +195,22 @@ export function IssueDetailPanel({ issue, onClose, onUpdate }) {
             </div>
             <div className="space-y-1 text-xs text-slate-600">
               <p className="flex items-center gap-1.5">
-                <MapPin size={13} className="text-teal-600" />
+                <MapPin size={13} className="text-blue-600" />
                 <span className="truncate">{issue.address || 'Location provided'}</span>
               </p>
               <p className="flex items-center gap-1.5">
-                <Building2 size={13} className="text-teal-600" />
+                <Building2 size={13} className="text-blue-600" />
                 <span>{issue.department_name || 'Municipal Works'}</span>
               </p>
               <p className="flex items-center gap-1.5">
-                <Users size={13} className="text-teal-600" />
+                <Users size={13} className="text-blue-600" />
                 <span>
                   {issue.reporter_count || issue.report_count} reporter
                   {(issue.reporter_count || issue.report_count) > 1 ? 's' : ''}
                 </span>
               </p>
               <p className="flex items-center gap-1.5">
-                <Calendar size={13} className="text-teal-600" />
+                <Calendar size={13} className="text-blue-600" />
                 <span>Opened {formatDate(issue.created_at)}</span>
               </p>
             </div>
@@ -346,7 +346,7 @@ export function IssueDetailPanel({ issue, onClose, onUpdate }) {
                               images: [{ src: log.proof_url, alt: 'Resolution proof', caption: log.note || 'Resolution proof' }],
                             })
                           }
-                          className="mt-0.5 block text-teal-600 hover:underline"
+                          className="mt-0.5 block text-blue-600 hover:underline"
                         >
                           View photo evidence
                         </button>

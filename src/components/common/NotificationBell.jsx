@@ -75,7 +75,7 @@ export function NotificationPanel({
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-slate-900">Notifications</span>
           {unreadCount > 0 && (
-            <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-800">
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
               {formatBadgeCount(unreadCount)} unread
             </span>
           )}
@@ -85,7 +85,7 @@ export function NotificationPanel({
           <button
             type="button"
             onClick={onMarkAllRead}
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700 transition hover:text-teal-800"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 transition hover:text-blue-800"
             aria-label="Mark all as read"
           >
             <CheckCheck size={13} />
@@ -106,7 +106,7 @@ export function NotificationPanel({
             <button
               type="button"
               onClick={onRetry}
-              className="mt-3 inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-1.5 text-[11px] font-semibold text-white"
+              className="mt-3 inline-flex items-center gap-1 rounded-lg bg-blue-700 px-3 py-1.5 text-[11px] font-semibold text-white"
             >
               <RefreshCw size={12} />
               Retry
@@ -126,7 +126,7 @@ export function NotificationPanel({
           notifications.map((notif) => (
             <div
               key={notif.id}
-              className={`flex items-start gap-2 p-3.5 ${!notif.read ? 'bg-teal-50/40' : 'bg-white'}`}
+              className={`flex items-start gap-2 p-3.5 ${!notif.read ? 'bg-blue-50/40' : 'bg-white'}`}
             >
               <button
                 type="button"
@@ -136,7 +136,7 @@ export function NotificationPanel({
               >
                 <span
                   className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
-                    !notif.read ? 'bg-teal-600 ring-2 ring-teal-200' : 'bg-slate-200'
+                    !notif.read ? 'bg-blue-600 ring-2 ring-blue-200' : 'bg-slate-200'
                   }`}
                 />
                 <div className="min-w-0 flex-1">
@@ -154,7 +154,7 @@ export function NotificationPanel({
                 <button
                   type="button"
                   onClick={() => onMarkOneRead(notif)}
-                  className="mt-0.5 rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-teal-700"
+                  className="mt-0.5 rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-blue-700"
                   aria-label="Mark as read"
                   title="Mark as read"
                 >
@@ -178,7 +178,7 @@ export function NotificationBellButton({ unreadCount, isOpen, onClick, compact =
       onClick={onClick}
       className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition ${
         isOpen
-          ? 'border-teal-600 bg-teal-50 text-teal-700'
+          ? 'border-blue-600 bg-blue-50 text-blue-700'
           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900'
       }`}
       aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}

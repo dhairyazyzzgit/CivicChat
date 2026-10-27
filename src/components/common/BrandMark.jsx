@@ -1,7 +1,7 @@
 export function BrandMark({ size = 32, className = '' }) {
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-2xl bg-brand text-white shadow-lg ${className}`}
+      className={`inline-flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-blue-900 text-white shadow-lg shadow-blue-900/25 ring-1 ring-white/10 ${className}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >

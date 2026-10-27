@@ -8,7 +8,7 @@ export function LocationStatus({ phase, onRetry, onUseMap }) {
   return (
     <div className="w-full max-w-[340px] rounded-[22px] rounded-tl-md border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
           {phase === 'denied' ? (
             <ShieldAlert size={18} />
           ) : isError ? (

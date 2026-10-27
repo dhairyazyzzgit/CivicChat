@@ -66,13 +66,13 @@ function Navbar() {
   ) : null;
 
   return (
-    <header className="bg-white sticky top-0 z-40 h-[88px] border-b-2 border-slate-900">
+    <header className="sticky top-0 z-40 h-[72px] border-b border-slate-200/80 bg-white/85 shadow-[0_1px_0_rgb(15_23_42/0.02),0_8px_24px_-12px_rgb(15_23_42/0.12)] backdrop-blur-xl">
       <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="flex items-center gap-4" aria-label="SHIKAAYAT home">
-          <BrandMark size={52} />
+        <Link to="/" className="flex items-center gap-3" aria-label="SHIKAAYAT home">
+          <BrandMark size={44} />
           <div className="flex flex-col leading-tight">
-            <BrandWord className="text-[26px] leading-none" />
-            <span className="text-[11px] font-black tracking-[0.2em] text-blue-700 uppercase leading-tight mt-1">Report it. Resolve it.</span>
+            <BrandWord className="text-[21px] leading-none sm:text-[23px]" />
+            <span className="mt-1 text-[9.5px] font-extrabold uppercase leading-tight tracking-[0.18em] text-blue-700 sm:text-[10.5px]">Report it. Resolve it.</span>
           </div>
         </Link>
 

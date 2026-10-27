@@ -190,7 +190,7 @@ function ReportDetailPage() {
   // Loading state
   if (loading) {
     return (
-      <main className="min-h-[calc(100vh-61px)] bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
+      <main className="min-h-[calc(100vh-72px)] bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
         <DetailSkeleton />
       </main>
     );
@@ -199,7 +199,7 @@ function ReportDetailPage() {
   // Not Found state
   if (notFound) {
     return (
-      <main className="min-h-[calc(100vh-61px)] flex items-center justify-center bg-slate-50 px-4 py-12">
+      <main className="min-h-[calc(100vh-72px)] flex items-center justify-center bg-slate-50 px-4 py-12">
         <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-slate-200/90 bg-white p-8 text-center shadow-xs">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
             <AlertCircle size={28} />
@@ -223,7 +223,7 @@ function ReportDetailPage() {
   // Error state
   if (error) {
     return (
-      <main className="min-h-[calc(100vh-61px)] flex items-center justify-center bg-slate-50 px-4 py-12">
+      <main className="min-h-[calc(100vh-72px)] flex items-center justify-center bg-slate-50 px-4 py-12">
         <div className="flex max-w-md flex-col items-center justify-center rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-xs">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
             <AlertCircle size={24} />
@@ -252,7 +252,7 @@ function ReportDetailPage() {
   const hasCoords = Number.isFinite(group?.lat) && Number.isFinite(group?.lng);
 
   return (
-    <main className="min-h-[calc(100vh-88px)] bg-slate-50 px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <main className="min-h-[calc(100vh-72px)] bg-slate-50 px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <div className="mx-auto max-w-4xl space-y-10">
         {/* Navigation Breadcrumb */}
         <div className="flex items-center justify-between">

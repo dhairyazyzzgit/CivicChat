@@ -4,7 +4,7 @@ import { BrandMark, BrandWord } from './BrandMark';
 
 export function AuthShell({ eyebrow, title, subtitle, children, footer }) {
   return (
-    <main className="grid min-h-[calc(100dvh-88px)] lg:grid-cols-[1.05fr_1fr]">
+    <main className="grid min-h-[calc(100dvh-72px)] lg:grid-cols-[1.05fr_1fr]">
       {/* Brand panel (desktop) */}
       <aside className="dark-panel grain relative hidden flex-col justify-between overflow-hidden p-14 text-white lg:flex">
         <div className="flex items-center gap-2.5">

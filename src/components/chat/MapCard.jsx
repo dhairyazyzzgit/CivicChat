@@ -309,7 +309,7 @@ function MapCard({
               <Pencil size={11} className="text-primary" />
               Or type the address / landmark
             </label>
-            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1 transition focus-within:border-teal-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-600/15">
+            <div className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1 transition focus-within:border-blue-600 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-600/15">
               <input
                 type="text"
                 value={typedAddress}
@@ -336,7 +336,7 @@ function MapCard({
                   disabled={isSaving || isFinding || typedAddress.trim().length < 3}
                   title="Find on map"
                   aria-label="Find on map"
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-teal-700 transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isFinding ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
                 </button>
@@ -352,7 +352,7 @@ function MapCard({
             type="button"
             onClick={() => setShowTyped(true)}
             disabled={isSaving}
-            className="flex items-center gap-1.5 text-[11px] font-medium text-teal-700 transition hover:text-teal-800 disabled:opacity-50"
+            className="flex items-center gap-1.5 text-[11px] font-medium text-blue-700 transition hover:text-blue-800 disabled:opacity-50"
           >
             <Pencil size={11} />
             Type the address instead

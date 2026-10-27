@@ -28,7 +28,7 @@ export default function BottomNav() {
 
   const tab = ({ isActive }) =>
     `flex flex-1 flex-col items-center gap-1 py-2 text-[10.5px] font-semibold transition ${
-      isActive ? 'text-teal-800' : 'text-slate-400'
+      isActive ? 'text-blue-800' : 'text-slate-400'
     }`;
 
   return (
@@ -41,7 +41,7 @@ export default function BottomNav() {
         <Link
           to="/chat"
           aria-label="Report an issue"
-          className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-teal-950/30 ring-4 ring-paper transition active:scale-95"
+          className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg shadow-blue-950/30 ring-4 ring-paper transition active:scale-95"
         >
           <Camera size={22} />
         </Link>

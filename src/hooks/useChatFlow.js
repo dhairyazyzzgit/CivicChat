@@ -5,6 +5,7 @@ import { findDuplicates, submitReport } from '../lib/chatServices';
 import { reverseGeocode } from '../lib/geocode';
 import { validateImageFile } from '../lib/imageFile';
 import { acquireBrowserPosition, isValidCoords } from '../lib/location';
+import { clearPhoto, loadPhoto, storePhoto } from '../lib/chatPhotoStore';
 import { createPhotoJob } from '../lib/photoJob';
 import { supabase } from '../lib/supabase';
 import { MAX_SOURCE_IMAGE_BYTES, sourceImageTooLargeMessage } from '../lib/uploadLimits';
@@ -63,7 +64,38 @@ if (import.meta.env.DEV) {
   });
 }
 
-const CHAT_STORAGE_KEY = 'civicchat:active_chat_state';
+const CHAT_STORAGE_KEY = 'civicchat:active_chat_state:v2';
+const CHAT_TTL_MS = 12 * 60 * 60 * 1000; // an unfinished report is kept for 12 hours
+
+function clearSavedChat() {
+  try {
+    window.localStorage.removeItem(CHAT_STORAGE_KEY);
+    window.sessionStorage.removeItem('civicchat:active_chat_state');
+  } catch {
+    // Ignore
+  }
+  clearPhoto();
+}
+
+// A job rebuilt from already-finished work (photo uploaded, AI result known)
+function createResumedJob(imageUrl, ai) {
+  let dead = false;
+  const done = { status: 'ok', mainUrl: imageUrl };
+  return {
+    id: crypto.randomUUID(),
+    objectUrl: imageUrl,
+    exif: Promise.resolve(null),
+    upload: Promise.resolve(done),
+    analysis: Promise.resolve(ai ? { status: 'ok', result: ai } : { status: 'manual', reason: 'error' }),
+    abort() {
+      dead = true;
+    },
+    retryUpload: () => Promise.resolve(done),
+    get dead() {
+      return dead;
+    },
+  };
+}
 
 function createFreshDraft() {
   return {
@@ -87,20 +119,22 @@ function createFreshDraft() {
 function createInitialState(uid) {
   try {
     if (typeof window !== 'undefined') {
-      const saved = window.sessionStorage.getItem(CHAT_STORAGE_KEY);
+      const saved = window.localStorage.getItem(CHAT_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (uid && parsed && parsed.uid === uid && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
+        const fresh = parsed && Date.now() - Number(parsed.savedAt || 0) < CHAT_TTL_MS;
+        if (uid && fresh && parsed.uid === uid && Array.isArray(parsed.messages) && parsed.messages.length > 0) {
           return {
             status: parsed.status || 'IDLE',
             messages: parsed.messages,
             interaction: parsed.interaction || null,
             busy: false,
-            error: null,
-            draft: parsed.draft || createFreshDraft(),
-            jobId: parsed.jobId || null,
+            error: parsed.status === 'ERROR' ? parsed.error || null : null,
+            draft: { ...createFreshDraft(), ...(parsed.draft || {}) },
+            jobId: null,
           };
         }
+        window.localStorage.removeItem(CHAT_STORAGE_KEY);
       }
     }
   } catch {
@@ -170,11 +204,7 @@ function reducer(state, action) {
       return { ...state, jobId: action.value };
 
     case 'RESET':
-      try {
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.removeItem(CHAT_STORAGE_KEY);
-        }
-      } catch {}
+      clearSavedChat();
       return {
         status: 'IDLE',
         messages: [{ id: 'greeting-msg', role: 'bot', type: 'text', text: BOT_GREETING }],
@@ -224,28 +254,37 @@ export function useChatFlow() {
     }
   }, [user?.id]);
 
-  // Persist chat across tab/route switches
+  // Persist the in-progress report so it survives route changes, reloads and closing the browser
   useEffect(() => {
     try {
-      if (typeof window !== 'undefined') {
-        if (state.messages.length > 1 || state.status !== 'IDLE') {
-          window.sessionStorage.setItem(
-            CHAT_STORAGE_KEY,
-            JSON.stringify({
-              uid: user?.id || null,
-              status: state.status,
-              messages: state.messages,
-              interaction: state.interaction,
-              draft: state.draft,
-              jobId: state.jobId,
-            }),
-          );
-        }
+      if (typeof window === 'undefined') return;
+      if (state.status === 'DONE') {
+        clearSavedChat();
+        return;
+      }
+      if (state.messages.length > 1 || state.status !== 'IDLE') {
+        const messages = state.messages.map((m) =>
+          m.type === 'image' && typeof m.imageUrl === 'string' && m.imageUrl.startsWith('blob:')
+            ? { ...m, imageUrl: state.draft.imageUrl || '' }
+            : m,
+        );
+        window.localStorage.setItem(
+          CHAT_STORAGE_KEY,
+          JSON.stringify({
+            uid: user?.id || null,
+            savedAt: Date.now(),
+            status: state.status,
+            messages,
+            interaction: state.interaction,
+            error: state.error,
+            draft: state.draft,
+          }),
+        );
       }
     } catch {
       // Ignore
     }
-  }, [user?.id, state.status, state.messages, state.interaction, state.draft, state.jobId]);
+  }, [user?.id, state.status, state.messages, state.interaction, state.draft, state.error]);
 
   // Queue helper: enqueue sequential bot messages with typing indicator (400-700 ms)
   const say = useCallback((text) => {
@@ -588,6 +627,20 @@ export function useChatFlow() {
     [say],
   );
 
+  // Reflect a job's upload result in the photo message and the draft
+  const wireJob = useCallback((job, photoMsgId) => {
+    photoMsgIdRef.current = photoMsgId;
+    job.upload.then((res) => {
+      if (jobRef.current?.id !== job.id || job.dead) return;
+      if (res.status === 'ok') {
+        dispatch({ type: 'UPDATE_MESSAGE', id: photoMsgId, patch: { uploadStatus: 'uploaded' } });
+        dispatch({ type: 'SET_DRAFT', patch: { imageUrl: res.mainUrl } });
+      } else {
+        dispatch({ type: 'UPDATE_MESSAGE', id: photoMsgId, patch: { uploadStatus: 'failed' } });
+      }
+    });
+  }, []);
+
   // File pick handler: Starts photo job synchronously
   const handlePhotoSelect = useCallback(
     async (file) => {
@@ -661,24 +714,8 @@ export function useChatFlow() {
         },
       });
 
-      // Hook upload progress to update photo message
-      job.upload.then((res) => {
-        if (jobRef.current?.id !== job.id || job.dead) return;
-        if (res.status === 'ok') {
-          dispatch({
-            type: 'UPDATE_MESSAGE',
-            id: photoMsgId,
-            patch: { uploadStatus: 'uploaded' },
-          });
-          dispatch({ type: 'SET_DRAFT', patch: { imageUrl: res.mainUrl } });
-        } else {
-          dispatch({
-            type: 'UPDATE_MESSAGE',
-            id: photoMsgId,
-            patch: { uploadStatus: 'failed' },
-          });
-        }
-      });
+      storePhoto(file, user?.id);
+      wireJob(job, photoMsgId);
 
       // Say initial bot acknowledgment
       await say('Got it! Let me find where this is.');
@@ -686,7 +723,7 @@ export function useChatFlow() {
       // Proceed to Location resolution
       await resolveLocation(job);
     },
-    [say, resolveLocation, state.status],
+    [say, resolveLocation, wireJob, state.status, user?.id],
   );
 
   // Map confirmation handler
@@ -1004,13 +1041,7 @@ export function useChatFlow() {
 
   // Reset / New report handler
   const reset = useCallback(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(CHAT_STORAGE_KEY);
-      }
-    } catch {
-      // Ignore
-    }
+    clearSavedChat();
     jobRef.current?.abort?.();
     jobRef.current = null;
     queueRef.current = Promise.resolve();
@@ -1018,6 +1049,141 @@ export function useChatFlow() {
     setTyping(false);
     setInput('');
     dispatch({ type: 'RESET' });
+  }, []);
+
+  // Resume an unfinished report after a reload, a reopened browser or coming back from another page
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+
+      const { status, draft, messages, interaction, error } = state;
+      if (status === 'IDLE' || status === 'DONE') return;
+      const photoMsg = [...messages].reverse().find((m) => m.type === 'image');
+      if (!photoMsg) return;
+
+      const aiPending =
+        ['PROCESSING', 'LOCATING', 'CONFIRM_LOCATION', 'ADJUST_LOCATION', 'WAIT_AI'].includes(status) && !draft.ai;
+
+      let job = null;
+      if (!draft.imageUrl || aiPending) {
+        const file = await loadPhoto(user?.id);
+        if (cancelled) return;
+        if (file) {
+          try {
+            job = createPhotoJob(file, {
+              userId: user?.id || '',
+              getAccessToken: async () => {
+                const { data } = await supabase.auth.getSession();
+                if (data?.session?.access_token) return data.session.access_token;
+                const { data: refreshed } = await supabase.auth.refreshSession();
+                return refreshed?.session?.access_token || '';
+              },
+            });
+          } catch {
+            job = null;
+          }
+        }
+      }
+      if (!job && draft.imageUrl) job = createResumedJob(draft.imageUrl, draft.ai);
+
+      if (!job) {
+        // The photo is gone (storage cleared): start over politely
+        dispatch({ type: 'RESET' });
+        await say('Your earlier photo is no longer available, so let us start fresh. Please send it again.');
+        return;
+      }
+
+      jobRef.current = job;
+      dispatch({ type: 'SET_JOB_ID', value: job.id });
+      dispatch({ type: 'CLEAR_ERROR' });
+      dispatch({
+        type: 'UPDATE_MESSAGE',
+        id: photoMsg.id,
+        patch: draft.imageUrl && job.objectUrl === draft.imageUrl
+          ? { imageUrl: draft.imageUrl, uploadStatus: 'uploaded' }
+          : { imageUrl: job.objectUrl, uploadStatus: 'uploading' },
+      });
+      wireJob(job, photoMsg.id);
+
+      switch (status) {
+        case 'PROCESSING':
+        case 'LOCATING':
+          await resolveLocation(job);
+          break;
+        case 'CONFIRM_LOCATION':
+        case 'ADJUST_LOCATION':
+          if (!interaction && Number.isFinite(draft.lat)) await presentAiAnalysis(job);
+          else if (!interaction) await resolveLocation(job);
+          break;
+        case 'WAIT_AI':
+          await presentAiAnalysis(job);
+          break;
+        case 'CONFIRM_CATEGORY':
+          if (!interaction) await presentAiAnalysis(job);
+          break;
+        case 'PICK_CATEGORY':
+          if (!interaction) {
+            dispatch({
+              type: 'SET_INTERACTION',
+              interaction: {
+                id: crypto.randomUUID(),
+                kind: 'chips',
+                options: CATEGORY_OPTIONS.map((c) => ({ id: c.id, label: `${c.icon} ${c.label}` })),
+              },
+            });
+          }
+          break;
+        case 'AWAIT_NOTE':
+          if (!interaction) {
+            dispatch({
+              type: 'SET_INTERACTION',
+              interaction: {
+                id: crypto.randomUUID(),
+                kind: 'chips',
+                options: [
+                  { id: 'skip_note', label: 'Submit report' },
+                  { id: 'add_note', label: 'Add a note' },
+                ],
+              },
+            });
+          }
+          break;
+        case 'CHECKING_DUPLICATES':
+        case 'SUBMITTING':
+          dispatch({
+            type: 'SET_ERROR',
+            text: 'We were interrupted while submitting. Tap Retry to finish. It will not create a duplicate report.',
+            retryAction: 'submit',
+          });
+          dispatch({ type: 'SET_STATUS', status: 'ERROR' });
+          break;
+        case 'ERROR':
+          dispatch({
+            type: 'SET_ERROR',
+            text: error?.text || 'Something was interrupted. Tap Retry to continue.',
+            retryAction: error?.retryAction || 'submit',
+          });
+          break;
+        default:
+          break;
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+      locationRequestRef.current += 1;
+      jobRef.current?.abort?.();
+      jobRef.current = null;
+      queueRef.current = Promise.resolve();
+      interactionLockRef.current.clear();
+    };
+    // Runs once per mount, using the state restored from storage
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isBusy = state.busy || typing;

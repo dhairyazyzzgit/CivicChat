@@ -60,7 +60,7 @@ function AdminDashboardPage() {
   return (
     <>
     <AdminNavbar onRefresh={fetchData} loading={loading} onSelectIssue={setSelectedId} />
-    <main className="min-h-[calc(100vh-88px)] bg-slate-50 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+    <main className="min-h-[calc(100vh-61px)] bg-slate-50 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-7xl space-y-6">
 
         {/* Stat Cards */}

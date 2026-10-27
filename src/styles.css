@@ -134,7 +134,8 @@
   -webkit-text-size-adjust: 100%;
 }
 
-html { background-color: #f8fafc; scroll-behavior: smooth; }
+html { background-color: #f8fafc; scroll-behavior: smooth; overflow-x: clip; }
+body { overflow-x: clip; }
 
 body {
   margin: 0;
@@ -281,6 +282,7 @@ button, a, input, textarea, select { touch-action: manipulation; }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+.fresh-glow { background: radial-gradient(ellipse 80% 50% at 50% 35%, rgb(59 130 246 / 0.10), transparent 70%), linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%); }
 .chat-bg { 
   background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
@@ -332,14 +334,26 @@ a {
   100% { background-position: 0% 50%; }
 }
 
-/* Marquee animation */
-.animate-marquee {
-  animation: marquee 40s linear infinite;
+/* Hero dot grid */
+.hero-grid {
+  background-image: radial-gradient(rgb(148 163 184 / 0.16) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000, transparent 75%);
 }
 
+/* Marquee: two identical groups, track shifts by exactly one group => seamless loop */
+.marquee-mask {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track { display: flex; width: max-content; animation: marquee 45s linear infinite; will-change: transform; }
+.marquee-group { display: flex; flex-shrink: 0; gap: 0.875rem; padding-right: 0.875rem; }
+.marquee-section:hover .marquee-track { animation-play-state: paused; }
 @keyframes marquee {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-33.33%); }
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
 }
 }
 
@@ -384,7 +398,9 @@ a {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .animate-floaty, .pulse-ring, .rise-in, .message-enter, .live-dot::after { animation: none !important; }
+  .animate-floaty, .pulse-ring, .rise-in, .message-enter, .live-dot::after, .animate-gradient-shift { animation: none !important; }
+  .marquee-track { animation-duration: 120s !important; }
+  .marquee-mask { overflow-x: auto; }
   .reveal { opacity: 1; transform: none; transition: none; }
 }
 
@@ -393,3 +409,12 @@ a {
 /* ---------- Leaflet ---------- */
 .leaflet-map-shell { position: relative; z-index: 0; isolation: isolate; overflow: hidden; }
 .leaflet-map-shell .leaflet-container, .leaflet-container { z-index: 0; font-family: var(--font-sans); }
+
+/* ---------- Finishing touches ---------- */
+main { animation: pageFade 360ms ease-out both; }
+@keyframes pageFade { from { opacity: 0; } to { opacity: 1; } }
+.chat-bg, .overflow-y-auto { scrollbar-width: thin; scrollbar-color: rgb(148 163 184 / 0.45) transparent; }
+.chat-bg::-webkit-scrollbar { width: 6px; }
+.chat-bg::-webkit-scrollbar-thumb { background: rgb(148 163 184 / 0.45); border-radius: 999px; }
+img { -webkit-user-drag: none; }
+@media (prefers-reduced-motion: reduce) { main { animation: none; } }

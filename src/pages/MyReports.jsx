@@ -108,7 +108,7 @@ function MyReportsPage() {
   }, [reports, activeFilter]);
 
   return (
-    <main className="min-h-[calc(100dvh-88px)] bg-slate-50 px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pt-20">
+    <main className="min-h-[calc(100dvh-72px)] bg-slate-50 px-4 pb-16 pt-12 sm:px-6 lg:px-8 lg:pt-20">
       <div className="mx-auto max-w-6xl">
         {/* Page Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

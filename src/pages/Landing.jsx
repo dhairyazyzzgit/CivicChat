@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, Bell, Camera, ChevronDown, Layers, MapPin, ShieldCheck, Zap } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Bell, Camera, Check, ChevronDown, Layers, MapPin, ShieldCheck, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Reveal from '../components/common/Reveal';
 import { BrandMark, BrandWord } from '../components/common/BrandMark';
@@ -89,23 +89,20 @@ function LandingPage() {
         <div className="absolute inset-0 opacity-30">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-transparent to-slate-900/40 animate-gradient-shift"></div>
         </div>
-        <div className="mx-auto grid max-w-7xl items-center gap-20 px-5 pb-32 pt-24 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:px-8 lg:pb-40 lg:pt-36 relative">
+        <div className="hero-grid pointer-events-none absolute inset-0" aria-hidden="true" />
+        <div className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[44rem] -translate-x-1/2 rounded-full bg-blue-600/20 blur-3xl" aria-hidden="true" />
+        <div className="mx-auto grid max-w-7xl items-center gap-16 px-5 pb-24 pt-14 sm:px-6 sm:pt-20 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:px-8 lg:pb-40 lg:pt-32 relative">
           <div className="rise-in">
-            <span className="inline-flex items-center gap-2 rounded-full border-2 border-blue-500/30 bg-blue-500/10 py-2.5 pl-3 pr-5 text-xs font-bold text-blue-300 uppercase tracking-widest">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white"><ShieldCheck size={12} /></span>
-              Report it. Resolve it.
-            </span>
-
-            <h1 className="display mt-12 text-[4rem] text-white sm:text-7xl lg:text-[7.5rem] leading-[1.02]">
+            <h1 className="display text-[3.5rem] text-white sm:text-7xl lg:text-[7rem] leading-[1.02]">
               Report it.<br />
-              <span className="text-blue-400">Resolve it.</span>
+              <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-blue-500 bg-clip-text text-transparent">Resolve it.</span>
             </h1>
 
-            <p className="text-lead mt-12 max-w-lg text-slate-300">
+            <p className="text-lead mt-8 max-w-lg text-slate-300 sm:mt-10">
               One photo reports the issue. We detect the location, route it to the right department, and keep you updated until it's resolved.
             </p>
 
-            <div className="mt-14 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="mt-10 flex flex-col gap-3.5 sm:mt-12 sm:flex-row sm:items-center sm:gap-4">
               <Link to={target.to} className="btn btn-primary pulse-ring !min-h-16 !px-10 !text-lg bg-blue-600 hover:bg-blue-500">
                 <Camera size={20} />
                 {target.label}
@@ -118,13 +115,16 @@ function LandingPage() {
               )}
             </div>
 
-            <div className="mt-12 flex items-center gap-8 text-sm font-medium text-slate-400">
-              <span>Free</span>
-              <span className="text-slate-600">·</span>
-              <span>Takes 30 seconds</span>
-              <span className="text-slate-600">·</span>
-              <span>Works on any device</span>
-            </div>
+            <ul className="mt-10 grid max-w-md grid-cols-3 gap-2 border-t border-white/10 pt-6 sm:flex sm:max-w-none sm:flex-wrap sm:items-center sm:gap-x-8 sm:gap-y-3 sm:border-0 sm:pt-0">
+              {['Free to use', 'Takes 30 seconds', 'Works on any device'].map((t) => (
+                <li key={t} className="flex flex-col items-center gap-2 text-center text-[12.5px] font-medium leading-tight text-slate-300 sm:flex-row sm:gap-2.5 sm:text-left sm:text-sm">
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/30 sm:h-5 sm:w-5">
+                    <Check size={14} strokeWidth={3} />
+                  </span>
+                  {t}
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div className="rise-in lg:justify-self-end" style={{ animationDelay: '180ms' }}>
@@ -134,27 +134,30 @@ function LandingPage() {
       </section>
 
       {/* ───────── Categories ───────── */}
-      <section className="bg-slate-50 border-y border-slate-200 overflow-hidden">
-        <div className="mx-auto max-w-7xl px-5 py-12 sm:px-6 lg:px-8">
-          <div className="relative">
-            <div className="flex animate-marquee gap-4 whitespace-nowrap">
-              {[...CATEGORIES, ...CATEGORIES, ...CATEGORIES].map((c, i) => (
-                <Link
-                  key={`${c.id}-${i}`}
-                  to={target.to}
-                  className="flex flex-shrink-0 items-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-600 hover:text-blue-700 hover:shadow-md active:scale-95"
-                >
-                  <span className="text-lg">{c.icon}</span>
-                  {c.label}
-                </Link>
-              ))}
-            </div>
+      <section className="marquee-section border-y border-slate-200 bg-slate-50" aria-label="Issue types you can report">
+        <div className="marquee-mask py-8 sm:py-10">
+          <div className="marquee-track">
+            {[0, 1].map((group) => (
+              <div key={group} className="marquee-group" aria-hidden={group === 1 ? 'true' : undefined}>
+                {CATEGORIES.map((c) => (
+                  <Link
+                    key={`${group}-${c.id}`}
+                    to={target.to}
+                    tabIndex={group === 1 ? -1 : undefined}
+                    className="flex flex-shrink-0 items-center gap-2.5 rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-xs transition hover:border-blue-600 hover:text-blue-700 hover:shadow-md active:scale-95"
+                  >
+                    <span className="text-lg leading-none">{c.icon}</span>
+                    {c.label}
+                  </Link>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ───────── How it works ───────── */}
-      <section className="bg-white mx-auto max-w-7xl px-5 py-32 sm:px-6 lg:px-8 lg:py-40">
+      <section className="bg-white mx-auto max-w-7xl px-5 py-20 sm:px-6 sm:py-28 lg:px-8 lg:py-36">
         <Reveal className="max-w-2xl">
           <p className="eyebrow">How it works</p>
           <h2 className="display mt-4 text-4xl text-slate-900 sm:text-5xl">
@@ -162,14 +165,14 @@ function LandingPage() {
           </h2>
         </Reveal>
 
-        <div className="mt-24 grid gap-6 md:grid-cols-3">
+        <div className="mt-14 grid sm:mt-20 gap-6 md:grid-cols-3">
           {STEPS.map(({ n, icon: Icon, title, text }, i) => (
-            <Reveal key={n} delay={i * 90} className="rounded-2xl border border-slate-200 bg-slate-50 p-12 sm:p-14 hover:border-blue-300 hover:shadow-lg transition-all">
+            <Reveal key={n} delay={i * 90} className="rounded-2xl border border-slate-200 bg-slate-50 p-8 sm:p-12 hover:-translate-y-1 hover:border-blue-300 hover:bg-white hover:shadow-xl transition-all duration-300">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-sm font-bold text-slate-400">{n}</span>
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white"><Icon size={24} /></span>
               </div>
-              <h3 className="font-display mt-14 text-2xl font-bold text-slate-900">{title}</h3>
+              <h3 className="font-display mt-10 text-2xl font-bold text-slate-900">{title}</h3>
               <p className="text-lead mt-5 font-medium">{text}</p>
             </Reveal>
           ))}
@@ -185,9 +188,9 @@ function LandingPage() {
               The right problem, <span className="text-blue-700">in front of the right people.</span>
             </h2>
           </Reveal>
-          <div className="mt-24 grid gap-6 md:grid-cols-3">
+          <div className="mt-14 grid sm:mt-20 gap-6 md:grid-cols-3">
             {FEATURES.map(({ icon: Icon, title, text }, i) => (
-              <Reveal key={title} delay={i * 90} className="rounded-2xl border border-slate-200 bg-white p-12 hover:border-blue-300 hover:shadow-lg transition-all">
+              <Reveal key={title} delay={i * 90} className="rounded-2xl border border-slate-200 bg-white p-8 sm:p-12 hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl transition-all duration-300">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 text-blue-700"><Icon size={24} /></span>
                 <h3 className="font-display mt-10 text-xl font-bold text-slate-900">{title}</h3>
                 <p className="text-lead mt-5 text-slate-600 font-medium">{text}</p>
@@ -206,9 +209,10 @@ function LandingPage() {
         <div className="mt-20 space-y-4">
           {FAQ.map(({ q, a }, i) => (
             <Reveal key={q} delay={i * 70}>
-              <details className="group rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-all">
-                <summary className="cursor-pointer px-6 py-6 font-bold text-slate-900 outline-none transition hover:bg-slate-50">
+              <details className="group rounded-xl border border-slate-200 bg-white shadow-xs transition-all hover:border-blue-300 open:border-blue-300 open:shadow-md">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-xl px-6 py-5 font-bold text-slate-900 outline-none transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
                   {q}
+                  <ChevronDown size={20} className="flex-shrink-0 text-slate-400 transition-transform duration-300 group-open:rotate-180 group-open:text-blue-700" />
                 </summary>
                 <p className="text-lead mt-0 max-w-2xl px-6 pb-6 font-medium">{a}</p>
               </details>
@@ -225,7 +229,8 @@ function LandingPage() {
           </div>
           <div className="relative">
             <h2 className="display mx-auto max-w-2xl text-4xl text-white sm:text-6xl">
-              Report it.<span className="text-blue-400">Resolve it.</span>
+              Report it.<br />
+              <span className="text-blue-400">Resolve it.</span>
             </h2>
             <p className="text-lead mx-auto mt-10 max-w-md text-slate-300 font-medium">One photo is all it takes to get started.</p>
             <Link to={target.to} className="btn btn-primary !min-h-16 !px-10 !text-lg mt-14 bg-blue-600 hover:bg-blue-500">
@@ -242,7 +247,11 @@ function LandingPage() {
             <BrandMark size={26} />
             <BrandWord />
           </div>
-          <p>In an emergency, call <b className="font-semibold text-slate-800">112</b></p>
+          <nav className="flex items-center gap-5 font-medium" aria-label="Footer">
+            <Link to={target.to} className="transition hover:text-blue-700">Report an issue</Link>
+            <Link to={user ? '/reports' : '/login?redirect=%2Freports'} className="transition hover:text-blue-700">Track reports</Link>
+          </nav>
+          <p>In an emergency, call <a href="tel:112" className="font-semibold text-slate-800 hover:underline">112</a></p>
           <p className="text-xs">© {new Date().getFullYear()} CivicChat</p>
         </div>
       </footer>

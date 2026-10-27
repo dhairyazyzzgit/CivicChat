@@ -132,10 +132,10 @@ export function CameraCapture({
           type="button"
           onClick={handleClick}
           disabled={disabled}
-          className="btn btn-primary pulse-ring w-full !min-h-14 !text-base"
+          className="btn pulse-ring w-full !min-h-[60px] !rounded-2xl !text-[17px] !font-bold bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 text-white shadow-lg shadow-blue-700/30 hover:brightness-110 hover:-translate-y-0.5"
         >
-          <Camera size={20} />
-          Take a photo
+          <Camera size={22} strokeWidth={2.4} />
+          Snap a photo
         </button>
       ) : (
         <button
@@ -144,7 +144,7 @@ export function CameraCapture({
           aria-label="Take photo"
           onClick={handleClick}
           disabled={disabled}
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200/60 hover:text-teal-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200/60 hover:text-blue-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Camera size={19} />
         </button>
